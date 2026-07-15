@@ -1,0 +1,1351 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <title>Explorateur DXD</title>
+  <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+  <style>
+    :root {
+      --bg: #0f1117;
+      --panel: #171b22;
+      --panel-2: #1e2430;
+      --border: #2c3444;
+      --text: #e6edf3;
+      --muted: #9aa4b2;
+      --accent: #4ea1ff;
+      --accent-2: #2f81f7;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      font-family: Arial, sans-serif;
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+    }
+
+    .container {
+      display: grid;
+      grid-template-columns: 360px 1fr;
+      min-height: 100vh;
+    }
+
+    body.catalogue-mode .container {
+      grid-template-columns: 1fr;
+    }
+
+    body.catalogue-mode .sidebar {
+      display: none;
+    }
+
+    .sidebar {
+      background: var(--panel);
+      border-right: 1px solid var(--border);
+      padding: 16px;
+      overflow-y: auto;
+    }
+
+    .main {
+      padding: 16px;
+      background: var(--bg);
+      overflow-x: hidden;
+    }
+
+    h1, h2, h3 {
+      margin-top: 0;
+      color: var(--text);
+    }
+
+    .hint, .subtle, .status {
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.4;
+      white-space: pre-wrap;
+    }
+
+    label {
+      display: block;
+      font-weight: 600;
+      margin-top: 12px;
+      margin-bottom: 6px;
+      color: var(--text);
+    }
+
+    select,
+    button,
+    input[type="number"],
+    input[type="text"] {
+      width: 100%;
+      padding: 10px 12px;
+      margin-bottom: 10px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: var(--panel-2);
+      color: var(--text);
+      outline: none;
+      font-size: 14px;
+    }
+
+    select[multiple] {
+      min-height: 180px;
+      padding: 6px;
+    }
+
+    option {
+      background: var(--panel-2);
+      color: var(--text);
+      padding: 8px;
+    }
+
+    option:checked {
+      background: var(--accent-2);
+      color: white;
+    }
+
+    button {
+      cursor: pointer;
+      background: var(--accent-2);
+      border-color: var(--accent-2);
+      color: white;
+      font-weight: 600;
+    }
+
+    button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    .button-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      margin-bottom: 8px;
+    }
+
+    .checkbox-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin: 10px 0 14px 0;
+      font-weight: 600;
+      color: var(--text);
+    }
+
+    .checkbox-row input[type="checkbox"] {
+      width: auto;
+      margin: 0;
+    }
+
+    .tabs {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 16px;
+      flex-wrap: wrap;
+    }
+
+    .tab-btn {
+      width: auto;
+      min-width: 140px;
+      margin-bottom: 0;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      color: var(--text);
+    }
+
+    .tab-btn.active {
+      background: var(--accent-2);
+      border-color: var(--accent-2);
+      color: white;
+    }
+
+    .tab-panel {
+      display: none;
+    }
+
+    .tab-panel.active {
+      display: block;
+    }
+
+    .card, .plot-card {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 12px;
+      margin-bottom: 16px;
+    }
+
+    .overview-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 12px;
+    }
+
+    .kpi {
+      background: var(--panel-2);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 14px;
+    }
+
+    .kpi-label {
+      color: var(--muted);
+      font-size: 12px;
+      margin-bottom: 6px;
+    }
+
+    .kpi-value {
+      font-size: 18px;
+      font-weight: 700;
+      color: var(--text);
+      word-break: break-word;
+    }
+
+    .meta-list {
+      display: grid;
+      gap: 8px;
+    }
+
+    .meta-row {
+      display: grid;
+      grid-template-columns: 220px 1fr;
+      gap: 12px;
+      padding: 8px 0;
+      border-bottom: 1px solid rgba(255,255,255,0.04);
+    }
+
+    .meta-key {
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .meta-value {
+      color: var(--text);
+      font-size: 13px;
+      word-break: break-word;
+    }
+
+    .list-box {
+      max-height: 260px;
+      overflow: auto;
+      background: var(--panel-2);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 10px;
+    }
+
+    .list-box ul {
+      margin: 0;
+      padding-left: 18px;
+    }
+
+    .list-box li {
+      margin: 4px 0;
+      color: var(--text);
+      font-size: 13px;
+    }
+
+    .table-toolbar {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 12px;
+      align-items: center;
+      margin: 12px 0;
+    }
+
+    .checkbox-inline {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--text);
+      font-size: 13px;
+      font-weight: 600;
+    }
+
+    .checkbox-inline input {
+      width: auto;
+      margin: 0;
+    }
+
+    .table-wrap {
+      overflow: auto;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: var(--panel-2);
+      max-height: 650px;
+    }
+
+    .catalog-table {
+      width: 100%;
+      border-collapse: collapse;
+      min-width: 1100px;
+      font-size: 13px;
+    }
+
+    .catalog-table thead th {
+      position: sticky;
+      top: 0;
+      z-index: 1;
+      background: #202734;
+      color: var(--text);
+      text-align: left;
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .catalog-table tbody td {
+      padding: 9px 12px;
+      border-bottom: 1px solid rgba(255,255,255,0.05);
+      color: var(--text);
+      white-space: nowrap;
+      vertical-align: middle;
+    }
+
+    .catalog-table tbody tr {
+      cursor: pointer;
+      transition: background 0.15s ease;
+    }
+
+    .catalog-table tbody tr:hover {
+      background: rgba(78, 161, 255, 0.08);
+    }
+
+    .catalog-table tbody tr.selected-row {
+      background: rgba(78, 161, 255, 0.16);
+      outline: 1px solid rgba(78, 161, 255, 0.45);
+    }
+
+    .catalog-table tbody tr.problem-row {
+      background: rgba(255, 80, 80, 0.10);
+    }
+
+    .catalog-table tbody tr.problem-row:hover {
+      background: rgba(255, 80, 80, 0.16);
+    }
+
+    .badge-ok,
+    .badge-bad,
+    .badge-warn {
+      display: inline-block;
+      min-width: 32px;
+      text-align: center;
+      padding: 2px 8px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .badge-ok {
+      background: rgba(46, 160, 67, 0.16);
+      color: #7ee787;
+    }
+
+    .badge-bad {
+      background: rgba(248, 81, 73, 0.16);
+      color: #ff7b72;
+    }
+
+    .badge-warn {
+      background: rgba(210, 153, 34, 0.16);
+      color: #f2cc60;
+    }
+
+    .error-cell {
+      max-width: 280px;
+      white-space: normal;
+      color: #ffb4b0;
+    }
+
+  </style>
+</head>
+<body class="catalogue-mode">
+<div class="container">
+  <div class="sidebar">
+    <h2>Contrôles</h2>
+    <div class="hint">Catalogue, détail fichier et exploration par labels.</div>
+
+    <div class="button-row">
+      <button onclick="location.href='/annotator'">Annotateur</button>
+      <button onclick="location.href='/drift-coherence'">Exploration labels</button>
+    </div>
+
+    <div class="button-row">
+      <button id="prevBtn">◀ Précédent</button>
+      <button id="nextBtn">Suivant ▶</button>
+    </div>
+
+    <label for="fileSelect">Fichier</label>
+    <select id="fileSelect"></select>
+
+    <label for="channelSelect">Canaux rééchantillonnés</label>
+    <select id="channelSelect" multiple size="10"></select>
+    <div class="subtle">Maximum 2 canaux affichés.</div>
+
+    <label for="featureSelect">Features glissantes</label>
+    <select id="featureSelect" multiple size="10"></select>
+    <div class="subtle">Format : Canal::feature</div>
+
+    <label for="driftChannelSelect">Canal pour drift</label>
+    <select id="driftChannelSelect"></select>
+
+    <label for="driftFeatureSelect">Feature globale pour drift</label>
+    <select id="driftFeatureSelect"></select>
+
+    <label for="maxPoints">Nb max de points signal / trajectoire</label>
+    <input id="maxPoints" type="number" value="8000" min="100" max="50000" step="100">
+
+    <label for="maxFeaturePoints">Nb max de points feature</label>
+    <input id="maxFeaturePoints" type="number" value="5000" min="50" max="50000" step="50">
+
+    <label class="checkbox-row" for="multiAxisMode">
+      <input type="checkbox" id="multiAxisMode" checked>
+      Une échelle par canal
+    </label>
+
+    <button id="refreshBtn">Afficher</button>
+
+    <div id="status" class="status">Initialisation…</div>
+  </div>
+
+  <div class="main">
+    <h1>Explorateur DXD</h1>
+
+    <div class="tabs">
+      <button class="tab-btn active" data-tab="tab-catalogue">Catalogue</button>
+      <button class="tab-btn" data-tab="tab-detail">Détail fichier</button>
+    </div>
+
+    <div id="tab-catalogue" class="tab-panel active">
+      <div class="card">
+        <h3>Catalogue des fichiers</h3>
+        <div class="subtle">
+          Clique sur une ligne pour sélectionner le fichier. Les lignes rouges indiquent un problème de lecture, de canaux, de rééchantillonnage ou de features.
+        </div>
+
+        <div class="table-toolbar">
+          <input id="catalogSearch" type="text" placeholder="Filtrer par nom de fichier..." />
+          <label class="checkbox-inline">
+            <input type="checkbox" id="showOnlyProblems">
+            Afficher seulement les fichiers avec problème
+          </label>
+        </div>
+
+        <div class="table-wrap">
+          <table class="catalog-table" id="catalogTable">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Fichier</th>
+                <th>Date</th>
+                <th>Modification</th>
+                <th>Open</th>
+                <th>Targets OK</th>
+                <th>Resampled</th>
+                <th>Features</th>
+                <th>Missing</th>
+                <th>Erreur</th>
+              </tr>
+            </thead>
+            <tbody id="catalogTableBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>Résumé du fichier courant</h3>
+        <div class="overview-grid">
+          <div class="kpi"><div class="kpi-label">Fichier</div><div class="kpi-value" id="kpiFile">-</div></div>
+          <div class="kpi"><div class="kpi-label">Date</div><div class="kpi-value" id="kpiDate">-</div></div>
+          <div class="kpi"><div class="kpi-label">Modification</div><div class="kpi-value" id="kpiModified">-</div></div>
+          <div class="kpi"><div class="kpi-label">Can open</div><div class="kpi-value" id="kpiCanOpen">-</div></div>
+          <div class="kpi"><div class="kpi-label">Canaux dispo</div><div class="kpi-value" id="kpiAvailable">-</div></div>
+          <div class="kpi"><div class="kpi-label">Canaux manquants</div><div class="kpi-value" id="kpiMissing">-</div></div>
+          <div class="kpi"><div class="kpi-label">Rééchantillonné</div><div class="kpi-value" id="kpiResampled">-</div></div>
+          <div class="kpi"><div class="kpi-label">Features</div><div class="kpi-value" id="kpiFeatures">-</div></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>Métadonnées</h3>
+        <div class="meta-list" id="catalogMeta"></div>
+      </div>
+
+      <div class="card">
+        <h3>Canaux disponibles</h3>
+        <div class="list-box"><ul id="availableChannelList"></ul></div>
+      </div>
+
+      <div class="card">
+        <h3>Canaux cibles manquants</h3>
+        <div class="list-box"><ul id="missingChannelList"></ul></div>
+      </div>
+
+      <div class="card">
+        <h3>Features globales du canal sélectionné</h3>
+        <div class="meta-list" id="globalFeatureList"></div>
+      </div>
+    </div>
+
+    <div id="tab-detail" class="tab-panel">
+      <div class="plot-card">
+        <h3>Signaux rééchantillonnés</h3>
+        <div id="plotRaw" style="height: 420px;"></div>
+      </div>
+
+      <div class="plot-card">
+        <h3>Features glissantes</h3>
+        <div id="plotFeat" style="height: 320px;"></div>
+      </div>
+
+      <div class="plot-card">
+        <h3>Trajectoire GPS</h3>
+        <div id="plotTrajectory" style="height: 420px;"></div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+  let currentFiles = [];
+  let cachedFileSummary = null;
+  let cachedChannelsPayload = null;
+  let cachedGlobalFeatures = null;
+  let cachedSlidingColumns = [];
+  let syncState = { xMin: null, xMax: null };
+  let isSyncing = false;
+
+  function setStatus(msg) {
+    document.getElementById("status").textContent = msg;
+  }
+
+  async function fetchJSON(url) {
+    const res = await fetch(url);
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(text || `HTTP ${res.status}`);
+    }
+    return await res.json();
+  }
+
+  function getSelectedValues(selectEl) {
+    return Array.from(selectEl.selectedOptions).map(o => o.value);
+  }
+
+  function setSelectedValues(selectEl, values) {
+    const wanted = new Set(values);
+    Array.from(selectEl.options).forEach(opt => {
+      opt.selected = wanted.has(opt.value);
+    });
+  }
+
+  function getCurrentFileIndex() {
+    return document.getElementById("fileSelect").selectedIndex;
+  }
+
+  function getCurrentJsonName() {
+    return document.getElementById("fileSelect").value;
+  }
+
+  function getCurrentFileMeta() {
+    const idx = getCurrentFileIndex();
+    if (idx < 0 || idx >= currentFiles.length) return null;
+    return currentFiles[idx];
+  }
+
+  function getSelectedChannels() {
+    return getSelectedValues(document.getElementById("channelSelect")).slice(0, 2);
+  }
+
+  function getPrimarySelectedChannel() {
+    const channels = getSelectedChannels();
+    return channels.length > 0 ? channels[0] : "";
+  }
+
+  function updateNavButtons() {
+    const idx = getCurrentFileIndex();
+    document.getElementById("prevBtn").disabled = idx <= 0;
+    document.getElementById("nextBtn").disabled = idx < 0 || idx >= currentFiles.length - 1;
+  }
+
+  function enforceMaxTwoChannels() {
+    const select = document.getElementById("channelSelect");
+    const selected = Array.from(select.options).filter(opt => opt.selected);
+
+    if (selected.length <= 2) return;
+
+    const selectedValues = selected.map(opt => opt.value);
+    const keep = new Set(selectedValues.slice(-2));
+
+    Array.from(select.options).forEach(opt => {
+      opt.selected = keep.has(opt.value);
+    });
+
+    setStatus("Maximum 2 canaux affichables en même temps.");
+  }
+
+  function filterFeatureColumnsByChannels(allFeatureCols, selectedChannels) {
+    if (!selectedChannels || selectedChannels.length === 0) return allFeatureCols;
+    return allFeatureCols.filter((feat) => selectedChannels.some((ch) => feat.startsWith(`${ch}::`)));
+  }
+
+  function buildDefaultFeatureSelection(filteredCols, selectedChannels) {
+    const preferredSuffixes = ["::mean", "::std", "::rms", "::min", "::max"];
+    const matched = [];
+
+    for (const ch of selectedChannels) {
+      for (const suffix of preferredSuffixes) {
+        const wanted = `${ch}${suffix}`;
+        if (filteredCols.includes(wanted) && !matched.includes(wanted)) {
+          matched.push(wanted);
+          break;
+        }
+      }
+    }
+
+    if (matched.length > 0) return matched;
+    return filteredCols.slice(0, 2);
+  }
+
+  function buildYAxisName(i) {
+    return i === 0 ? "y" : `y${i + 1}`;
+  }
+
+  function applySharedXRange(layout) {
+    if (syncState.xMin !== null && syncState.xMax !== null) {
+      layout.xaxis.range = [syncState.xMin, syncState.xMax];
+    }
+    return layout;
+  }
+
+  function buildRawLayoutMultiAxis(channels, title) {
+    const layout = {
+      title: { text: title, font: { color: "#e6edf3" } },
+      paper_bgcolor: "#171b22",
+      plot_bgcolor: "#171b22",
+      font: { color: "#e6edf3" },
+      xaxis: { title: "time (s)", gridcolor: "#2c3444", zerolinecolor: "#2c3444" },
+      yaxis: { title: channels[0] || "value", gridcolor: "#2c3444", zerolinecolor: "#2c3444" },
+      hovermode: "x unified",
+      margin: { t: 50, l: 70, r: 170, b: 50 },
+      legend: { orientation: "h", yanchor: "bottom", y: 1.02, xanchor: "left", x: 0 }
+    };
+
+    for (let i = 1; i < channels.length; i++) {
+      const axisKey = `yaxis${i + 1}`;
+      layout[axisKey] = {
+        title: channels[i],
+        overlaying: "y",
+        side: "right",
+        anchor: "x",
+        showgrid: false,
+        zeroline: false,
+        position: Math.min(0.86 + 0.04 * (i - 1), 0.98)
+      };
+    }
+
+    return applySharedXRange(layout);
+  }
+
+  function buildRawLayoutSingleAxis(title) {
+    return applySharedXRange({
+      title: { text: title, font: { color: "#e6edf3" } },
+      paper_bgcolor: "#171b22",
+      plot_bgcolor: "#171b22",
+      font: { color: "#e6edf3" },
+      xaxis: { title: "time (s)", gridcolor: "#2c3444", zerolinecolor: "#2c3444" },
+      yaxis: { title: "value", gridcolor: "#2c3444", zerolinecolor: "#2c3444" },
+      hovermode: "x unified",
+      margin: { t: 50, l: 70, r: 40, b: 50 },
+      legend: { orientation: "h", yanchor: "bottom", y: 1.02, xanchor: "left", x: 0 }
+    });
+  }
+
+  function buildFeatureLayout(title) {
+    return applySharedXRange({
+      title: { text: title, font: { color: "#e6edf3" } },
+      paper_bgcolor: "#171b22",
+      plot_bgcolor: "#171b22",
+      font: { color: "#e6edf3" },
+      xaxis: { title: "time (s)", gridcolor: "#2c3444", zerolinecolor: "#2c3444" },
+      yaxis: { title: "feature value", gridcolor: "#2c3444", zerolinecolor: "#2c3444" },
+      hovermode: "x unified",
+      margin: { t: 50, l: 70, r: 40, b: 50 },
+      legend: { orientation: "h", yanchor: "bottom", y: 1.02, xanchor: "left", x: 0 }
+    });
+  }
+
+  function escapeHtml(value) {
+    return String(value ?? "")
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;")
+      .replaceAll("'", "&#039;");
+  }
+
+  function buildTrajectoryLayout(title) {
+    return {
+      title: { text: title, font: { color: "#e6edf3" } },
+      paper_bgcolor: "#171b22",
+      plot_bgcolor: "#171b22",
+      font: { color: "#e6edf3" },
+      xaxis: { title: "Longitude", gridcolor: "#2c3444", zerolinecolor: "#2c3444" },
+      yaxis: {
+        title: "Latitude",
+        gridcolor: "#2c3444",
+        zerolinecolor: "#2c3444",
+        scaleanchor: "x",
+        scaleratio: 1
+      },
+      hovermode: "closest",
+      margin: { t: 50, l: 70, r: 40, b: 60 },
+      legend: { orientation: "h", yanchor: "bottom", y: 1.02, xanchor: "left", x: 0 }
+    };
+  }
+
+  function buildDriftLayout(title) {
+    return {
+      title: { text: title, font: { color: "#e6edf3" } },
+      paper_bgcolor: "#171b22",
+      plot_bgcolor: "#171b22",
+      font: { color: "#e6edf3" },
+      xaxis: { title: "modified_at", gridcolor: "#2c3444", zerolinecolor: "#2c3444" },
+      yaxis: { title: "value", gridcolor: "#2c3444", zerolinecolor: "#2c3444" },
+      hovermode: "closest",
+      margin: { t: 50, l: 70, r: 40, b: 80 }
+    };
+  }
+
+  function buildResidualDriftLayout(title) {
+    return {
+      title: { text: title, font: { color: "#e6edf3" } },
+      paper_bgcolor: "#171b22",
+      plot_bgcolor: "#171b22",
+      font: { color: "#e6edf3" },
+      xaxis: { title: "acquisition time", gridcolor: "#2c3444", zerolinecolor: "#2c3444" },
+      yaxis: { title: "résidu", gridcolor: "#2c3444", zerolinecolor: "#2c3444" },
+      hovermode: "x unified",
+      margin: { t: 50, l: 70, r: 40, b: 80 },
+      legend: { orientation: "h", yanchor: "bottom", y: 1.02, xanchor: "left", x: 0 }
+    };
+  }
+
+  function fmtNumber(value, digits = 3) {
+    const n = Number(value);
+    if (!Number.isFinite(n)) return "-";
+    return n.toFixed(digits);
+  }
+
+  function attachSync(plotId) {
+    const plotDiv = document.getElementById(plotId);
+
+    plotDiv.on("plotly_relayout", async function(eventData) {
+      if (isSyncing || !eventData) return;
+
+      let changed = false;
+
+      if (
+        Object.prototype.hasOwnProperty.call(eventData, "xaxis.range[0]") &&
+        Object.prototype.hasOwnProperty.call(eventData, "xaxis.range[1]")
+      ) {
+        syncState.xMin = eventData["xaxis.range[0]"];
+        syncState.xMax = eventData["xaxis.range[1]"];
+        changed = true;
+      }
+
+      if (Object.prototype.hasOwnProperty.call(eventData, "xaxis.autorange")) {
+        syncState.xMin = null;
+        syncState.xMax = null;
+        changed = true;
+      }
+
+      if (!changed) return;
+
+      isSyncing = true;
+      try {
+        const targetLayout = (syncState.xMin !== null && syncState.xMax !== null)
+          ? { "xaxis.range": [syncState.xMin, syncState.xMax] }
+          : { "xaxis.autorange": true };
+
+        const syncTargets = ["plotRaw", "plotFeat"];
+        for (const otherPlotId of syncTargets) {
+          if (otherPlotId === plotId) continue;
+          const otherPlot = document.getElementById(otherPlotId);
+          if (otherPlot && otherPlot.data) {
+            await Plotly.relayout(otherPlot, targetLayout);
+          }
+        }
+      } catch (err) {
+        console.error(err);
+      } finally {
+        isSyncing = false;
+      }
+    });
+  }
+
+  function activateTab(tabId) {
+    document.querySelectorAll(".tab-btn").forEach(btn => {
+      btn.classList.toggle("active", btn.dataset.tab === tabId);
+    });
+    document.querySelectorAll(".tab-panel").forEach(panel => {
+      panel.classList.toggle("active", panel.id === tabId);
+    });
+
+    document.body.classList.toggle("catalogue-mode", tabId === "tab-catalogue");
+
+    window.dispatchEvent(new Event("resize"));
+
+    if (tabId === "tab-drift") {
+      drawDriftPlot().catch(err => setStatus(`Erreur drift:\n${err}`));
+      drawResidualDriftPlot().catch(err => setStatus(`Erreur drift résidus:\n${err}`));
+    }
+  }
+
+  function setupTabs() {
+    document.querySelectorAll(".tab-btn").forEach(btn => {
+      btn.addEventListener("click", () => activateTab(btn.dataset.tab));
+    });
+  }
+
+  function setList(listId, items) {
+    const ul = document.getElementById(listId);
+    ul.innerHTML = "";
+    for (const item of items) {
+      const li = document.createElement("li");
+      li.textContent = item;
+      ul.appendChild(li);
+    }
+  }
+
+  function setMetaRows(containerId, rows) {
+    const container = document.getElementById(containerId);
+    container.innerHTML = "";
+    rows.forEach(([key, value]) => {
+      const row = document.createElement("div");
+      row.className = "meta-row";
+      row.innerHTML = `<div class="meta-key">${key}</div><div class="meta-value">${value ?? "-"}</div>`;
+      container.appendChild(row);
+    });
+  }
+
+  function fileHasProblem(item) {
+    return (
+      item.can_open === false ||
+      item.has_all_target_channels === false ||
+      item.has_resampled_data === false ||
+      item.has_features === false ||
+      Number(item.target_missing_count || 0) > 0 ||
+      !!item.open_error
+    );
+  }
+
+  function boolBadge(v) {
+    if (v === true) return `<span class="badge-ok">OK</span>`;
+    if (v === false) return `<span class="badge-bad">NO</span>`;
+    return `<span class="badge-warn">?</span>`;
+  }
+
+  function renderCatalogTable() {
+    const tbody = document.getElementById("catalogTableBody");
+    const searchValue = (document.getElementById("catalogSearch")?.value || "").toLowerCase().trim();
+    const onlyProblems = document.getElementById("showOnlyProblems")?.checked || false;
+    const currentJsonName = getCurrentJsonName();
+
+    tbody.innerHTML = "";
+
+    let rows = currentFiles.slice();
+
+    if (searchValue) {
+      rows = rows.filter(item => (item.file || "").toLowerCase().includes(searchValue));
+    }
+
+    if (onlyProblems) {
+      rows = rows.filter(fileHasProblem);
+    }
+
+    rows.forEach((item, i) => {
+      const tr = document.createElement("tr");
+      const isProblem = fileHasProblem(item);
+      const isSelected = item.json_name === currentJsonName;
+
+      if (isProblem) tr.classList.add("problem-row");
+      if (isSelected) tr.classList.add("selected-row");
+
+      const missingCount = Number(item.target_missing_count || 0);
+      const err = item.open_error || "-";
+
+      tr.innerHTML = `
+        <td>${i + 1}</td>
+        <td title="${item.file || ""}">${item.file || "-"}</td>
+        <td>${item.date || "-"}</td>
+        <td>${item.modified_at || "-"}</td>
+        <td>${boolBadge(item.can_open)}</td>
+        <td>${boolBadge(item.has_all_target_channels)}</td>
+        <td>${boolBadge(item.has_resampled_data)}</td>
+        <td>${boolBadge(item.has_features)}</td>
+        <td>${missingCount > 0 ? `<span class="badge-bad">${missingCount}</span>` : `<span class="badge-ok">0</span>`}</td>
+        <td class="error-cell" title="${err}">${err}</td>
+      `;
+
+      tr.addEventListener("click", async () => {
+        const fileSelect = document.getElementById("fileSelect");
+        const idx = currentFiles.findIndex(x => x.json_name === item.json_name);
+        if (idx < 0) return;
+
+        fileSelect.selectedIndex = idx;
+
+        try {
+          await refreshAllViews();
+          renderCatalogTable();
+          activateTab("tab-catalogue");
+        } catch (err) {
+          setStatus(`Erreur sélection catalogue:\n${err}`);
+        }
+      });
+
+      tbody.appendChild(tr);
+    });
+  }
+
+  async function loadFiles() {
+    setStatus("Chargement des fichiers…");
+    const data = await fetchJSON("/api/files");
+    const select = document.getElementById("fileSelect");
+    select.innerHTML = "";
+
+    currentFiles = data.items || [];
+
+    if (currentFiles.length === 0) {
+      setStatus("Aucun fichier JSON trouvé.");
+      updateNavButtons();
+      renderCatalogTable();
+      return;
+    }
+
+    currentFiles.forEach((item, i) => {
+      const label = item.date ? `${item.file} — ${item.date}` : item.file;
+      const opt = document.createElement("option");
+      opt.value = item.json_name;
+      opt.textContent = label;
+      if (i === 0) opt.selected = true;
+      select.appendChild(opt);
+    });
+
+    updateNavButtons();
+    renderCatalogTable();
+    setStatus(`${currentFiles.length} fichier(s) chargé(s).`);
+  }
+
+  async function loadSummary() {
+    const jsonName = getCurrentJsonName();
+    if (!jsonName) {
+      cachedFileSummary = null;
+      return;
+    }
+    cachedFileSummary = await fetchJSON(`/api/file/${encodeURIComponent(jsonName)}/summary`);
+  }
+
+  async function loadChannels({ preserveSelection = true } = {}) {
+    const jsonName = getCurrentJsonName();
+    const select = document.getElementById("channelSelect");
+    const previousSelection = preserveSelection ? getSelectedValues(select) : [];
+    select.innerHTML = "";
+
+    if (!jsonName) {
+      cachedChannelsPayload = null;
+      return;
+    }
+
+    const data = await fetchJSON(`/api/file/${encodeURIComponent(jsonName)}/channels`);
+    cachedChannelsPayload = data;
+
+    const channels = data.resampled_channels || [];
+
+    channels.forEach((ch) => {
+      const opt = document.createElement("option");
+      opt.value = ch;
+      opt.textContent = ch;
+      select.appendChild(opt);
+    });
+
+    if (channels.length === 0) return;
+
+    if (preserveSelection && previousSelection.length > 0) {
+      const available = new Set(channels);
+      const kept = previousSelection.filter(ch => available.has(ch)).slice(0, 2);
+      if (kept.length > 0) {
+        setSelectedValues(select, kept);
+      } else {
+        Array.from(select.options).slice(0, 2).forEach(opt => opt.selected = true);
+      }
+    } else {
+      Array.from(select.options).slice(0, 2).forEach(opt => opt.selected = true);
+    }
+  }
+
+  async function loadFeatures({ preserveSelection = true } = {}) {
+    const jsonName = getCurrentJsonName();
+    const select = document.getElementById("featureSelect");
+    const previousSelection = preserveSelection ? getSelectedValues(select) : [];
+    const selectedChannels = getSelectedChannels();
+
+    select.innerHTML = "";
+    cachedSlidingColumns = [];
+
+    if (!jsonName) return;
+
+    const data = await fetchJSON(`/api/file/${encodeURIComponent(jsonName)}/features/sliding/columns`);
+    const allCols = data.columns || [];
+    const filteredCols = filterFeatureColumnsByChannels(allCols, selectedChannels);
+    cachedSlidingColumns = filteredCols;
+
+    filteredCols.forEach((feat) => {
+      const opt = document.createElement("option");
+      opt.value = feat;
+      opt.textContent = feat;
+      select.appendChild(opt);
+    });
+
+    if (filteredCols.length === 0) return;
+
+    if (preserveSelection && previousSelection.length > 0) {
+      const available = new Set(filteredCols);
+      const kept = previousSelection.filter(f => available.has(f));
+      if (kept.length > 0) {
+        setSelectedValues(select, kept);
+      } else {
+        setSelectedValues(select, buildDefaultFeatureSelection(filteredCols, selectedChannels));
+      }
+    } else {
+      setSelectedValues(select, buildDefaultFeatureSelection(filteredCols, selectedChannels));
+    }
+  }
+
+  async function loadGlobalFeatures() {
+    const jsonName = getCurrentJsonName();
+    if (!jsonName) {
+      cachedGlobalFeatures = null;
+      return;
+    }
+    cachedGlobalFeatures = await fetchJSON(`/api/file/${encodeURIComponent(jsonName)}/features/global`);
+  }
+
+
+
+  function renderCatalogueView() {
+    const summary = cachedFileSummary || {};
+    const status = summary.status || {};
+    const meta = getCurrentFileMeta() || {};
+    const channels = cachedChannelsPayload || {};
+    const primaryChannel = getPrimarySelectedChannel();
+
+    document.getElementById("kpiFile").textContent = summary.file || meta.file || "-";
+    document.getElementById("kpiDate").textContent = summary.date || meta.date || "-";
+    document.getElementById("kpiModified").textContent = summary.modified_at || meta.modified_at || "-";
+    document.getElementById("kpiCanOpen").textContent = String(status.can_open ?? meta.can_open ?? "-");
+    document.getElementById("kpiAvailable").textContent = String(summary.n_available_channels ?? channels.available_channels?.length ?? 0);
+    document.getElementById("kpiMissing").textContent = String(summary.n_missing_target_channels ?? channels.target_missing?.length ?? 0);
+    document.getElementById("kpiResampled").textContent = String(status.has_resampled_data ?? meta.has_resampled_data ?? "-");
+    document.getElementById("kpiFeatures").textContent = String(status.has_features ?? meta.has_features ?? "-");
+
+    setMetaRows("catalogMeta", [
+      ["file_id", summary.file_id],
+      ["pipeline_version", summary.pipeline?.pipeline_version],
+      ["target_hz", summary.pipeline?.target_hz],
+      ["window_sec", summary.pipeline?.window_sec],
+      ["window_stride_sec", summary.pipeline?.window_stride_sec],
+      ["target_found", channels.target_found?.length],
+      ["target_missing", channels.target_missing?.length],
+      ["open_error", status.open_error || meta.open_error || "-"]
+    ]);
+
+    setList("availableChannelList", channels.available_channels || []);
+    setList("missingChannelList", channels.target_missing || []);
+
+    const featureObj = cachedGlobalFeatures?.by_channel?.[primaryChannel];
+    if (!featureObj) {
+      setMetaRows("globalFeatureList", [["Canal sélectionné", primaryChannel || "-"], ["Features globales", "Aucune"]]);
+      return;
+    }
+
+    const rows = [["Canal sélectionné", primaryChannel]];
+    Object.entries(featureObj).forEach(([k, v]) => rows.push([k, v]));
+    setMetaRows("globalFeatureList", rows);
+  }
+
+  async function drawRawPlot() {
+    const jsonName = getCurrentJsonName();
+    const channels = getSelectedChannels();
+    const maxPoints = document.getElementById("maxPoints").value || "8000";
+    const multiAxisMode = document.getElementById("multiAxisMode").checked;
+
+    if (!jsonName || channels.length === 0) {
+      Plotly.purge("plotRaw");
+      return;
+    }
+
+    const url =
+      `/api/file/${encodeURIComponent(jsonName)}/series` +
+      `?channels=${encodeURIComponent(channels.join(","))}` +
+      `&max_points=${encodeURIComponent(maxPoints)}`;
+
+    const data = await fetchJSON(url);
+    const items = data.items || [];
+    if (items.length === 0) {
+      Plotly.purge("plotRaw");
+      return;
+    }
+
+    const traces = channels.map((ch, i) => ({
+      type: "scatter",
+      mode: "lines",
+      name: ch,
+      x: items.map(d => d.time),
+      y: items.map(d => d[ch]),
+      yaxis: multiAxisMode ? buildYAxisName(i) : "y"
+    }));
+
+    const layout = multiAxisMode
+      ? buildRawLayoutMultiAxis(channels, `${data.file} — Signaux`)
+      : buildRawLayoutSingleAxis(`${data.file} — Signaux`);
+
+    await Plotly.newPlot("plotRaw", traces, layout, { responsive: true, displaylogo: false });
+    attachSync("plotRaw");
+  }
+
+  async function drawFeaturePlot() {
+    const jsonName = getCurrentJsonName();
+    const features = getSelectedValues(document.getElementById("featureSelect"));
+    const maxPoints = document.getElementById("maxFeaturePoints").value || "5000";
+
+    if (!jsonName || features.length === 0) {
+      Plotly.purge("plotFeat");
+      return;
+    }
+
+    const url =
+      `/api/file/${encodeURIComponent(jsonName)}/features/sliding` +
+      `?features=${encodeURIComponent(features.join(","))}` +
+      `&max_points=${encodeURIComponent(maxPoints)}`;
+
+    const data = await fetchJSON(url);
+    const items = data.items || [];
+    if (items.length === 0) {
+      Plotly.purge("plotFeat");
+      return;
+    }
+
+    const traces = features.map((feat) => ({
+      type: "scatter",
+      mode: "lines+markers",
+      name: feat,
+      x: items.map(d => d.time),
+      y: items.map(d => d[feat])
+    }));
+
+    const layout = buildFeatureLayout(`${data.file} — Features glissantes`);
+    await Plotly.newPlot("plotFeat", traces, layout, { responsive: true, displaylogo: false });
+    attachSync("plotFeat");
+  }
+
+  async function drawTrajectoryPlot() {
+    const jsonName = getCurrentJsonName();
+    const maxPoints = document.getElementById("maxPoints").value || "8000";
+
+    if (!jsonName) {
+      Plotly.purge("plotTrajectory");
+      return;
+    }
+
+    const lonName = "gps.longitude";
+    const latName = "gps.latitude";
+
+    const url =
+      `/api/file/${encodeURIComponent(jsonName)}/series` +
+      `?channels=${encodeURIComponent([lonName, latName].join(","))}` +
+      `&max_points=${encodeURIComponent(maxPoints)}`;
+
+    try {
+      const data = await fetchJSON(url);
+      const items = data.items || [];
+
+      const xs = [];
+      const ys = [];
+      const ts = [];
+
+      for (const d of items) {
+        const x = d[lonName];
+        const y = d[latName];
+        if (Number.isFinite(x) && Number.isFinite(y)) {
+          xs.push(x);
+          ys.push(y);
+          ts.push(d.time);
+        }
+      }
+
+      if (xs.length === 0) {
+        Plotly.purge("plotTrajectory");
+        return;
+      }
+
+      const trace = {
+        type: "scatter",
+        mode: "lines+markers",
+        name: "Trajectoire",
+        x: xs,
+        y: ys,
+        text: ts.map(t => `time=${t}`),
+        hovertemplate: "Longitude=%{x}<br>Latitude=%{y}<br>%{text}<extra></extra>",
+        marker: { size: 4 },
+        line: { width: 2 }
+      };
+
+      const startTrace = {
+        type: "scatter",
+        mode: "markers",
+        name: "Départ",
+        x: [xs[0]],
+        y: [ys[0]],
+        text: [`time=${ts[0]}`],
+        hovertemplate: "Départ<br>Longitude=%{x}<br>Latitude=%{y}<br>%{text}<extra></extra>",
+        marker: { size: 10, symbol: "circle" }
+      };
+
+      const endTrace = {
+        type: "scatter",
+        mode: "markers",
+        name: "Arrivée",
+        x: [xs[xs.length - 1]],
+        y: [ys[ys.length - 1]],
+        text: [`time=${ts[ts.length - 1]}`],
+        hovertemplate: "Arrivée<br>Longitude=%{x}<br>Latitude=%{y}<br>%{text}<extra></extra>",
+        marker: { size: 10, symbol: "diamond" }
+      };
+
+      const layout = buildTrajectoryLayout(`${data.file} — Trajectoire GPS`);
+      await Plotly.newPlot("plotTrajectory", [trace, startTrace, endTrace], layout, { responsive: true, displaylogo: false });
+    } catch (err) {
+      console.error("drawTrajectoryPlot error:", err);
+      Plotly.purge("plotTrajectory");
+    }
+  }
+
+
+
+  async function refreshAllViews() {
+    await loadSummary();
+    await loadChannels({ preserveSelection: true });
+    await loadFeatures({ preserveSelection: true });
+    await loadGlobalFeatures();
+    renderCatalogueView();
+    renderCatalogTable();
+    await drawRawPlot();
+    await drawFeaturePlot();
+    await drawTrajectoryPlot();
+    updateNavButtons();
+  }
+
+  async function goToRelativeFile(offset) {
+    const select = document.getElementById("fileSelect");
+    const idx = select.selectedIndex;
+    const nextIdx = idx + offset;
+    if (nextIdx < 0 || nextIdx >= select.options.length) return;
+    select.selectedIndex = nextIdx;
+    await refreshAllViews();
+  }
+
+  document.getElementById("fileSelect").addEventListener("change", async () => {
+    try {
+      await refreshAllViews();
+    } catch (err) {
+      setStatus(`Erreur changement de fichier:\n${err}`);
+    }
+  });
+
+  document.getElementById("channelSelect").addEventListener("change", async () => {
+    try {
+      enforceMaxTwoChannels();
+      await loadFeatures({ preserveSelection: true });
+      renderCatalogueView();
+      renderCatalogTable();
+      await drawRawPlot();
+      await drawFeaturePlot();
+      await drawTrajectoryPlot();
+    } catch (err) {
+      setStatus(`Erreur canaux:\n${err}`);
+    }
+  });
+
+  document.getElementById("featureSelect").addEventListener("change", async () => {
+    try {
+      renderCatalogueView();
+      renderCatalogTable();
+      await drawFeaturePlot();
+    } catch (err) {
+      setStatus(`Erreur features:\n${err}`);
+    }
+  });
+
+
+
+  document.getElementById("refreshBtn").addEventListener("click", async () => {
+    try {
+      await refreshAllViews();
+    } catch (err) {
+      setStatus(`Erreur affichage:\n${err}`);
+    }
+  });
+
+  document.getElementById("multiAxisMode").addEventListener("change", async () => {
+    try {
+      await drawRawPlot();
+    } catch (err) {
+      setStatus(`Erreur changement de mode:\n${err}`);
+    }
+  });
+
+  document.getElementById("prevBtn").addEventListener("click", async () => {
+    await goToRelativeFile(-1);
+  });
+
+  document.getElementById("nextBtn").addEventListener("click", async () => {
+    await goToRelativeFile(1);
+  });
+
+  document.getElementById("catalogSearch").addEventListener("input", () => {
+    renderCatalogTable();
+  });
+
+  document.getElementById("showOnlyProblems").addEventListener("change", () => {
+    renderCatalogTable();
+  });
+
+  document.addEventListener("keydown", async (event) => {
+    if (event.target && ["INPUT", "SELECT", "TEXTAREA"].includes(event.target.tagName)) return;
+    if (event.key === "ArrowLeft") await goToRelativeFile(-1);
+    if (event.key === "ArrowRight") await goToRelativeFile(1);
+  });
+
+  window.addEventListener("resize", () => {
+    ["plotRaw", "plotFeat", "plotTrajectory"].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) Plotly.Plots.resize(el);
+    });
+  });
+
+  (async () => {
+    try {
+      setupTabs();
+      activateTab("tab-detail");
+      await loadFiles();
+      await refreshAllViews();
+      setStatus("Application prête.");
+    } catch (err) {
+      console.error(err);
+      setStatus(`Erreur à l'initialisation:\n${err}`);
+    }
+  })();
+</script>
+</body>
+</html>

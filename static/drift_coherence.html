@@ -1,0 +1,692 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Exploration signaux par labels</title>
+  <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+  <style>
+    :root {
+      --bg: #0b0f14;
+      --panel: #151b24;
+      --panel-2: #101620;
+      --border: #273244;
+      --text: #edf2f7;
+      --muted: #9aa7b7;
+      --blue: #3b82f6;
+      --green: #22c55e;
+      --orange: #f59e0b;
+      --red: #ef4444;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    header {
+      height: 58px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 0 20px;
+      border-bottom: 1px solid var(--border);
+      background: #111722;
+      position: sticky;
+      top: 0;
+      z-index: 5;
+    }
+    h1 { margin: 0; font-size: 18px; font-weight: 700; }
+    h2 { margin: 0 0 10px; font-size: 14px; font-weight: 800; }
+    a { color: var(--muted); text-decoration: none; font-size: 13px; }
+    a:hover { color: var(--text); }
+    .layout {
+      display: grid;
+      grid-template-columns: 330px 1fr;
+      min-height: calc(100vh - 58px);
+    }
+    aside {
+      border-right: 1px solid var(--border);
+      padding: 18px;
+      background: var(--panel-2);
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+    main {
+      padding: 18px;
+      display: grid;
+      gap: 16px;
+      align-content: start;
+    }
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 14px;
+      min-width: 0;
+    }
+    .controls {
+      display: grid;
+      gap: 12px;
+    }
+    label {
+      display: block;
+      margin-bottom: 5px;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 600;
+    }
+    select, input {
+      width: 100%;
+      border: 1px solid var(--border);
+      background: #0d131c;
+      color: var(--text);
+      border-radius: 6px;
+      padding: 9px 10px;
+      font-size: 14px;
+    }
+    button {
+      border: 0;
+      border-radius: 6px;
+      padding: 10px 12px;
+      background: var(--blue);
+      color: #fff;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    button.secondary {
+      background: #1f2937;
+      color: var(--muted);
+      border: 1px solid var(--border);
+    }
+    button:hover { filter: brightness(1.08); }
+    .grid-2 {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+      gap: 16px;
+    }
+    .plot { height: 380px; }
+    .plot-tall { height: 450px; }
+    .kpis {
+      display: grid;
+      grid-template-columns: repeat(6, minmax(110px, 1fr));
+      gap: 10px;
+    }
+    .kpi {
+      background: #101722;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px;
+    }
+    .kpi .label {
+      color: var(--muted);
+      font-size: 11px;
+      text-transform: uppercase;
+    }
+    .kpi .value {
+      margin-top: 6px;
+      font-size: 20px;
+      font-weight: 800;
+      overflow-wrap: anywhere;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12px;
+    }
+    th, td {
+      border-bottom: 1px solid var(--border);
+      padding: 7px 6px;
+      text-align: right;
+      white-space: nowrap;
+    }
+    th:first-child, td:first-child { text-align: left; }
+    th { color: var(--muted); font-weight: 700; }
+    .scroll { overflow: auto; max-height: 360px; }
+    .status {
+      color: var(--muted);
+      white-space: pre-wrap;
+      font-size: 13px;
+    }
+    .hint {
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.4;
+    }
+    @media (max-width: 1100px) {
+      .layout { grid-template-columns: 1fr; }
+      aside { border-right: 0; border-bottom: 1px solid var(--border); }
+      .grid-2, .kpis { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Exploration signaux par labels</h1>
+    <nav>
+      <a href="/">Dashboard</a>
+      <span style="color:var(--border); margin:0 8px;">|</span>
+      <a href="/annotator">Annotateur</a>
+    </nav>
+  </header>
+
+  <div class="layout">
+    <aside>
+      <section class="card controls">
+        <h2>Filtres</h2>
+        <div>
+          <label for="labelSourceSelect">Source du label</label>
+          <select id="labelSourceSelect">
+            <option value="annotated">Annotations validées</option>
+            <option value="cnn_predicted">Prédictions CNN</option>
+            <option value="both">Annotations + CNN</option>
+          </select>
+        </div>
+        <div>
+          <label for="labelSelect">Label</label>
+          <select id="labelSelect">
+            <option value="">Tous les labels</option>
+          </select>
+        </div>
+        <div>
+          <label for="signalSelect">Capteur / signal</label>
+          <select id="signalSelect"></select>
+        </div>
+        <div>
+          <label for="fileSelect">Fichier</label>
+          <select id="fileSelect"></select>
+        </div>
+        <div>
+          <label for="timeGroupingSelect">Agrégation temporelle</label>
+          <select id="timeGroupingSelect">
+            <option value="day_hour">Journée + heure</option>
+            <option value="day">Journée</option>
+            <option value="hour">Heure</option>
+          </select>
+        </div>
+        <div>
+          <label for="minPointsInput">Points min / boîte</label>
+          <input id="minPointsInput" type="number" min="1" max="10000" step="1" value="10">
+        </div>
+        <button id="refreshBtn">Rafraîchir</button>
+        <div class="hint">Les visualisations restent descriptives: aucun entraînement, aucun lancement d'analyse et aucune décision automatique.</div>
+      </section>
+
+      <section class="card">
+        <h2>État</h2>
+        <div id="status" class="status">Chargement...</div>
+      </section>
+    </aside>
+
+    <main>
+      <section class="kpis" id="coverageKpis"></section>
+
+      <section class="grid-2">
+        <div class="card">
+          <h2>Portion de trajectoire filtrée</h2>
+          <div id="trajectoryPlot" class="plot"></div>
+        </div>
+        <div class="card">
+          <h2>Série temporelle du signal</h2>
+          <div id="signalPlot" class="plot"></div>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>Série temporelle de boîtes à moustaches</h2>
+        <div class="hint" style="margin-bottom:8px;">Distribution du signal sur toutes les trajectoires correspondant au label, regroupée par tranche de temps.</div>
+        <div id="boxplotTimePlot" class="plot-tall"></div>
+      </section>
+
+      <section class="grid-2">
+        <div class="card">
+          <h2>Comparaison par labels</h2>
+          <div id="labelComparePlot" class="plot"></div>
+        </div>
+        <div class="card">
+          <h2>Segments filtrés</h2>
+          <div class="scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>Fichier</th>
+                  <th>Label</th>
+                  <th>Source</th>
+                  <th>Début</th>
+                  <th>Fin</th>
+                  <th>Confiance</th>
+                </tr>
+              </thead>
+              <tbody id="segmentsTableBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script>
+    const E = id => document.getElementById(id);
+    const S = {
+      files: [],
+      labels: [],
+      signals: [],
+      segments: [],
+      trajectory: null,
+      series: [],
+      boxplot: [],
+      coverage: {},
+      compare: [],
+      loadToken: 0
+    };
+
+    async function fetchJSON(url) {
+      const res = await fetch(url);
+      if (!res.ok) throw Error(await res.text());
+      return await res.json();
+    }
+
+    async function fetchJSONOrEmpty(url) {
+      try {
+        return await fetchJSON(url);
+      } catch (e) {
+        return { items: [], coverage: {}, trajectory: null, segments: [] };
+      }
+    }
+
+    function esc(s) {
+      return String(s ?? "").replace(/[&<>"']/g, m => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[m]));
+    }
+
+    function fmt(x, n = 2, suffix = "") {
+      const v = Number(x);
+      return Number.isFinite(v) ? `${v.toFixed(n)}${suffix}` : "-";
+    }
+
+    function setStatus(text) {
+      E("status").textContent = text;
+    }
+
+    function plotLayout(title, ytitle = "") {
+      return {
+        title: { text: title, font: { color: "#edf2f7", size: 13 } },
+        paper_bgcolor: "#151b24",
+        plot_bgcolor: "#101620",
+        font: { color: "#edf2f7" },
+        margin: { l: 58, r: 24, t: 42, b: 62 },
+        xaxis: { gridcolor: "#273244" },
+        yaxis: { title: ytitle, gridcolor: "#273244" },
+        legend: { orientation: "h", y: -0.22 }
+      };
+    }
+
+    function currentFilters() {
+      return {
+        labelSource: E("labelSourceSelect").value,
+        label: E("labelSelect").value,
+        signal: E("signalSelect").value,
+        jsonName: E("fileSelect").value,
+        timeGrouping: E("timeGroupingSelect").value,
+        minPoints: E("minPointsInput").value || "10"
+      };
+    }
+
+    async function init() {
+      const [files, labels, signals] = await Promise.all([
+        fetchJSON("/api/exploration/files"),
+        fetchJSONOrEmpty("/api/annotations/segments/labels"),
+        fetchJSON("/api/exploration/signals/options")
+      ]);
+      S.files = files.items || [];
+      S.labels = (labels.items || []).map(item => item.label).filter(Boolean);
+      S.signals = signals.items || [];
+      renderStaticOptions();
+      await loadAll();
+    }
+
+    function renderStaticOptions() {
+      renderFileOptions();
+      E("labelSelect").innerHTML = '<option value="">Tous les labels</option>' + S.labels.map(label => `<option value="${esc(label)}">${esc(label)}</option>`).join("");
+      E("signalSelect").innerHTML = S.signals.map(item => {
+        const disabled = item.available ? "" : " disabled";
+        return `<option value="${esc(item.value)}"${disabled}>${esc(item.label)}${item.available ? "" : " (absent)"}</option>`;
+      }).join("");
+      const firstAvailable = S.signals.find(item => item.available);
+      if (firstAvailable) E("signalSelect").value = firstAvailable.value;
+    }
+
+    function renderFileOptions(previousValue = "") {
+      E("fileSelect").innerHTML = S.files.map(item => {
+        const name = item.json_name || item.file;
+        const label = item.date ? `${name} | ${item.date}` : name;
+        return `<option value="${esc(name)}">${esc(label)}</option>`;
+      }).join("");
+      if (previousValue && S.files.some(item => (item.json_name || item.file) === previousValue)) {
+        E("fileSelect").value = previousValue;
+      } else if (S.files.length) {
+        E("fileSelect").value = S.files[0].json_name || S.files[0].file;
+      }
+    }
+
+    async function refreshFilesForFilters() {
+      const previous = E("fileSelect").value;
+      const f = currentFilters();
+      const params = new URLSearchParams({ label_source: f.labelSource, limit: "5000" });
+      if (f.label) params.set("label", f.label);
+      const data = await fetchJSONOrEmpty(`/api/exploration/files?${params.toString()}`);
+      S.files = data.items || [];
+      renderFileOptions(previous);
+    }
+
+    async function refreshSignalOptionsForFile() {
+      const { jsonName, signal } = currentFilters();
+      if (!jsonName) return;
+      const data = await fetchJSONOrEmpty(`/api/exploration/signals/options?json_name=${encodeURIComponent(jsonName)}`);
+      S.signals = data.items || S.signals;
+      E("signalSelect").innerHTML = S.signals.map(item => {
+        const disabled = item.available ? "" : " disabled";
+        return `<option value="${esc(item.value)}"${disabled}>${esc(item.label)}${item.available ? "" : " (absent)"}</option>`;
+      }).join("");
+      if (S.signals.some(item => item.value === signal && item.available)) {
+        E("signalSelect").value = signal;
+      } else {
+        const firstAvailable = S.signals.find(item => item.available);
+        if (firstAvailable) E("signalSelect").value = firstAvailable.value;
+      }
+    }
+
+    async function loadAll() {
+      const token = ++S.loadToken;
+      await refreshSignalOptionsForFile();
+      const f = currentFilters();
+      if (!f.jsonName || !f.signal) {
+        setStatus("Sélectionne un fichier et un signal.");
+        return;
+      }
+
+      setStatus("Chargement des panels...");
+      const segmentParams = new URLSearchParams({
+        label_source: f.labelSource,
+        json_name: f.jsonName,
+        limit: "1000"
+      });
+      if (f.label) segmentParams.set("label", f.label);
+
+      const seriesParams = new URLSearchParams({
+        signal: f.signal,
+        label_source: f.labelSource,
+        json_name: f.jsonName,
+        context_sec: "10",
+        max_points: "12000"
+      });
+      if (f.label) seriesParams.set("label", f.label);
+
+      const boxParams = new URLSearchParams({
+        signal: f.signal,
+        label_source: f.labelSource,
+        time_grouping: f.timeGrouping,
+        min_points: f.minPoints,
+        max_segments: "1500",
+        max_points: "250000"
+      });
+      if (f.label) boxParams.set("label", f.label);
+
+      const compareParams = new URLSearchParams({
+        signal: f.signal,
+        label_source: f.labelSource,
+        json_name: f.jsonName,
+        time_grouping: "day",
+        min_points: "5",
+        max_segments: "1000",
+        max_points: "120000"
+      });
+
+      const [segments, series, boxplot, compare] = await Promise.all([
+        fetchJSONOrEmpty(`/api/exploration/segments?${segmentParams.toString()}`),
+        fetchJSONOrEmpty(`/api/exploration/signals/series?${seriesParams.toString()}`),
+        fetchJSONOrEmpty(`/api/exploration/signals/boxplot?${boxParams.toString()}`),
+        fetchJSONOrEmpty(`/api/exploration/signals/boxplot?${compareParams.toString()}`)
+      ]);
+      if (token !== S.loadToken) return;
+
+      S.segments = segments.items || [];
+      S.trajectory = segments.trajectory || null;
+      S.series = series.items || [];
+      S.boxplot = boxplot.items || [];
+      S.coverage = boxplot.coverage || {};
+      S.compare = compare.items || [];
+      renderAll();
+    }
+
+    async function loadAfterLabelFilterChange() {
+      const token = ++S.loadToken;
+      setStatus("Mise à jour des fichiers compatibles avec le label...");
+      await refreshFilesForFilters();
+      if (token !== S.loadToken) return;
+      await loadAll();
+    }
+
+    function renderCoverage() {
+      const c = S.coverage || {};
+      const items = [
+        ["Fichiers", c.n_files ?? 0],
+        ["Segments", c.n_segments ?? S.segments.length],
+        ["Points", c.n_points ?? 0],
+        ["Durée", fmt(c.duration_sec, 1, " s")],
+        ["Signal", E("signalSelect").value || "-"],
+        ["Source", E("labelSourceSelect").value || "-"]
+      ];
+      E("coverageKpis").innerHTML = items.map(([label, value]) => `
+        <div class="kpi">
+          <div class="label">${esc(label)}</div>
+          <div class="value">${esc(value)}</div>
+        </div>
+      `).join("");
+    }
+
+    function renderTrajectoryPlot() {
+      const traces = [];
+      const traj = S.trajectory?.items || [];
+      if (traj.length) {
+        traces.push({
+          type: "scattergl",
+          mode: "lines",
+          name: "trajectoire",
+          x: traj.map(p => p.lon),
+          y: traj.map(p => p.lat),
+          text: traj.map(p => `t=${fmt(p.time, 1)}s`),
+          line: { color: "#64748b", width: 2 },
+          hovertemplate: "lon=%{x:.6f}<br>lat=%{y:.6f}<br>%{text}<extra></extra>"
+        });
+        const bySegment = S.segments.slice(0, 80);
+        bySegment.forEach(seg => {
+          const pts = traj.filter(p => Number(p.time) >= Number(seg.start_sec) && Number(p.time) <= Number(seg.end_sec));
+          if (!pts.length) return;
+          traces.push({
+            type: "scattergl",
+            mode: "lines",
+            name: `${seg.label} (${seg.label_source})`,
+            x: pts.map(p => p.lon),
+            y: pts.map(p => p.lat),
+            line: { color: seg.label_source === "annotated" ? "#22c55e" : "#f59e0b", width: 4 },
+            hovertemplate: `${esc(seg.label)}<br>${fmt(seg.start_sec, 1)}s - ${fmt(seg.end_sec, 1)}s<extra>${esc(seg.label_source)}</extra>`,
+            showlegend: false
+          });
+        });
+      }
+      const layout = plotLayout(E("fileSelect").value || "trajectoire", "latitude");
+      layout.xaxis.title = "longitude";
+      layout.yaxis.scaleanchor = "x";
+      layout.yaxis.scaleratio = 1;
+      Plotly.react("trajectoryPlot", traces, layout, { responsive: true, displaylogo: false });
+    }
+
+    function renderSignalPlot() {
+      const traces = [];
+      if (S.series.length) {
+        traces.push({
+          type: "scattergl",
+          mode: "lines",
+          name: E("signalSelect").value,
+          x: S.series.map(r => r.time),
+          y: S.series.map(r => r.value),
+          line: { color: "#3b82f6", width: 1.6 },
+          hovertemplate: "t=%{x:.2f}s<br>val=%{y:.4g}<extra></extra>"
+        });
+      }
+      const layout = plotLayout("Signal sur segments filtrés", E("signalSelect").value);
+      layout.xaxis.title = "temps (s)";
+      layout.shapes = S.segments.slice(0, 120).map(seg => ({
+        type: "rect",
+        xref: "x",
+        yref: "paper",
+        x0: Number(seg.start_sec),
+        x1: Number(seg.end_sec),
+        y0: 0,
+        y1: 1,
+        fillcolor: seg.label_source === "annotated" ? "rgba(34,197,94,0.16)" : "rgba(245,158,11,0.16)",
+        line: { width: 0 },
+        layer: "below"
+      }));
+      Plotly.react("signalPlot", traces, layout, { responsive: true, displaylogo: false });
+    }
+
+    function renderTimeBoxplot() {
+      const rows = S.boxplot;
+      const periodOrder = [...new Set(rows.map(r => r.time_bucket).filter(Boolean))];
+      const xIndex = new Map(periodOrder.map((period, idx) => [period, idx]));
+      const periodCounts = new Map();
+      rows.forEach(r => periodCounts.set(r.time_bucket, (periodCounts.get(r.time_bucket) || 0) + 1));
+      const periodSeen = new Map();
+      const shapes = [];
+      const hoverX = [];
+      const hoverY = [];
+      const hoverText = [];
+      rows.forEach((r, idx) => {
+        const baseX = xIndex.has(r.time_bucket) ? xIndex.get(r.time_bucket) : idx;
+        const count = periodCounts.get(r.time_bucket) || 1;
+        const seen = periodSeen.get(r.time_bucket) || 0;
+        periodSeen.set(r.time_bucket, seen + 1);
+        const x = baseX + (count > 1 ? (seen - (count - 1) / 2) * 0.22 : 0);
+        const sourceColor = r.label_source === "cnn_predicted" ? "#f59e0b" : "#3b82f6";
+        const fill = r.label_source === "cnn_predicted" ? "rgba(245,158,11,0.24)" : "rgba(59,130,246,0.24)";
+        const halfWidth = count > 1 ? 0.09 : 0.28;
+        const x0 = x - halfWidth;
+        const x1 = x + halfWidth;
+        shapes.push(
+          { type: "line", xref: "x", yref: "y", x0: x, x1: x, y0: r.q05, y1: r.q95, line: { color: sourceColor, width: 1.5 } },
+          { type: "line", xref: "x", yref: "y", x0: x - 0.18, x1: x + 0.18, y0: r.q05, y1: r.q05, line: { color: sourceColor, width: 1.5 } },
+          { type: "line", xref: "x", yref: "y", x0: x - 0.18, x1: x + 0.18, y0: r.q95, y1: r.q95, line: { color: sourceColor, width: 1.5 } },
+          { type: "rect", xref: "x", yref: "y", x0, x1, y0: r.q25, y1: r.q75, fillcolor: fill, line: { color: sourceColor, width: 1.8 } },
+          { type: "line", xref: "x", yref: "y", x0, x1, y0: r.q50, y1: r.q50, line: { color: "#edf2f7", width: 2 } }
+        );
+        hoverX.push(x);
+        hoverY.push(r.q50);
+        hoverText.push([
+          r.time_bucket,
+          `${r.label} | ${r.label_source}`,
+          `q05=${fmt(r.q05, 4)}`,
+          `q25=${fmt(r.q25, 4)}`,
+          `q50=${fmt(r.q50, 4)}`,
+          `q75=${fmt(r.q75, 4)}`,
+          `q95=${fmt(r.q95, 4)}`,
+          `${r.n_points} points | ${r.n_files} fichier(s)`
+        ].join("<br>"));
+      });
+      const traces = rows.length ? [{
+        type: "scatter",
+        mode: "markers",
+        name: E("signalSelect").value,
+        x: hoverX,
+        y: hoverY,
+        text: hoverText,
+        marker: { size: 10, color: "rgba(237,242,247,0.01)" },
+        hovertemplate: "%{text}<extra></extra>",
+        showlegend: false
+      }] : [];
+      const layout = plotLayout("Série temporelle de distributions par période", E("signalSelect").value);
+      layout.xaxis.title = "tranche temporelle";
+      layout.xaxis.type = "linear";
+      layout.xaxis.tickmode = "array";
+      layout.xaxis.tickvals = periodOrder.map((_, idx) => idx);
+      layout.xaxis.ticktext = periodOrder;
+      layout.xaxis.tickangle = -35;
+      layout.shapes = shapes;
+      Plotly.react("boxplotTimePlot", traces, layout, { responsive: true, displaylogo: false });
+    }
+
+    function renderLabelComparePlot() {
+      const rows = S.compare;
+      const labels = [...new Set(rows.map(r => r.label).filter(Boolean))].sort();
+      const traces = labels.map(label => {
+        const rs = rows.filter(r => r.label === label);
+        return {
+          type: "box",
+          name: label,
+          x: rs.map(() => label),
+          q1: rs.map(r => r.q25),
+          median: rs.map(r => r.q50),
+          q3: rs.map(r => r.q75),
+          lowerfence: rs.map(r => r.q05),
+          upperfence: rs.map(r => r.q95),
+          boxpoints: false,
+          text: rs.map(r => `${r.n_points} points | ${r.label_source}`),
+          hovertemplate: "%{x}<br>q50=%{median:.4g}<br>%{text}<extra></extra>"
+        };
+      });
+      const layout = plotLayout("Distribution du signal par label", E("signalSelect").value);
+      layout.xaxis.title = "label";
+      Plotly.react("labelComparePlot", traces, layout, { responsive: true, displaylogo: false });
+    }
+
+    function renderSegmentsTable() {
+      if (!S.segments.length) {
+        E("segmentsTableBody").innerHTML = '<tr><td colspan="6" style="color:var(--muted);">Aucun segment pour ces filtres.</td></tr>';
+        return;
+      }
+      E("segmentsTableBody").innerHTML = S.segments.slice(0, 500).map(seg => `
+        <tr>
+          <td title="${esc(seg.json_name)}">${esc(seg.json_name || "-")}</td>
+          <td>${esc(seg.label || "-")}</td>
+          <td>${esc(seg.label_source || "-")}</td>
+          <td>${fmt(seg.start_sec, 1)}s</td>
+          <td>${fmt(seg.end_sec, 1)}s</td>
+          <td>${fmt(seg.confidence, 2)}</td>
+        </tr>
+      `).join("");
+    }
+
+    function renderAll() {
+      renderCoverage();
+      renderTrajectoryPlot();
+      renderSignalPlot();
+      renderTimeBoxplot();
+      renderLabelComparePlot();
+      renderSegmentsTable();
+      const f = currentFilters();
+      setStatus([
+        `Label: ${f.label || "Tous"}`,
+        `Source: ${f.labelSource}`,
+        `Signal: ${f.signal}`,
+        `Fichier: ${f.jsonName || "-"}`,
+        `Segments affichés: ${S.segments.length}`,
+        `Boîtes temporelles: ${S.boxplot.length}`
+      ].join("\n"));
+    }
+
+    ["signalSelect", "timeGroupingSelect", "minPointsInput"].forEach(id => {
+      E(id).addEventListener("change", () => loadAll().catch(e => setStatus(String(e))));
+    });
+    ["labelSourceSelect", "labelSelect"].forEach(id => {
+      E(id).addEventListener("change", () => loadAfterLabelFilterChange().catch(e => setStatus(String(e))));
+    });
+    E("fileSelect").addEventListener("change", () => loadAll().catch(e => setStatus(String(e))));
+    E("refreshBtn").addEventListener("click", () => loadAll().catch(e => setStatus(String(e))));
+
+    init().catch(e => setStatus(String(e)));
+  </script>
+</body>
+</html>

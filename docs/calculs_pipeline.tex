@@ -1,0 +1,784 @@
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[french]{babel}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{booktabs}
+\usepackage{geometry}
+\usepackage{hyperref}
+\usepackage{longtable}
+\usepackage{enumitem}
+
+\geometry{margin=2.3cm}
+\hypersetup{
+  colorlinks=true,
+  linkcolor=blue,
+  urlcolor=blue
+}
+
+\title{Detail mathematique du pipeline d'analyse DXD}
+\author{}
+\date{}
+
+\newcommand{\RMS}{\operatorname{RMS}}
+\newcommand{\median}{\operatorname{median}}
+\newcommand{\IQR}{\operatorname{IQR}}
+\newcommand{\MAD}{\operatorname{MAD}}
+\newcommand{\finite}{\mathcal{F}}
+
+\begin{document}
+\maketitle
+
+\section{Objet du document}
+
+Ce document decrit les calculs effectues par les scripts du depot, de la lecture des fichiers DXD jusqu'aux index exploites par l'application.
+Il suit principalement le flux moderne :
+
+\begin{enumerate}[label=\arabic*.]
+  \item \texttt{00\_scan\_dxd\_channel\_presence.py} : lecture DXD, resampling, export JSON canonique, features globales et glissantes.
+  \item \texttt{build\_window\_quality\_index.py} : calcul par fenetre des residus physiques, scores qualite et labels de contexte.
+  \item \texttt{build\_window\_cluster\_index.py} : regroupement DBSCAN de fenetres dynamiquement comparables.
+  \item \texttt{build\_speed\_day\_summary.py}, \texttt{build\_drift\_index.py}, \texttt{build\_correlation\_anomaly\_index.py} : agregations et index secondaires.
+\end{enumerate}
+
+Les scripts \texttt{01\_export\_dxd\_resampled\_json.py} et \texttt{02\_extract\_features.py} constituent un flux historique ou auxiliaire. Leurs calculs sont resumes en fin de document.
+
+\section{Notations generales}
+
+Pour une acquisition, les signaux sont resamples sur une grille temporelle commune :
+\[
+  t_i = t_{\min} + i \Delta t,\qquad i=0,\ldots,N-1.
+\]
+Dans la configuration par defaut de l'export DXD :
+\[
+  f_s = 100~\mathrm{Hz}, \qquad \Delta t = \frac{1}{f_s}=0.01~\mathrm{s}.
+\]
+
+Les grandeurs principales sont :
+\[
+\begin{aligned}
+  v_x(t) &: \text{vitesse longitudinale vehicule en m/s},\\
+  v_y(t) &: \text{vitesse laterale vehicule en m/s},\\
+  a_x(t) &: \text{acceleration longitudinale en } \mathrm{m/s^2},\\
+  a_y(t) &: \text{acceleration laterale en } \mathrm{m/s^2},\\
+  r(t) &: \text{vitesse de lacet, ou yaw rate, en rad/s},\\
+  \omega_{fl},\omega_{fr},\omega_{rl},\omega_{rr} &: \text{vitesses angulaires des roues}.
+\end{aligned}
+\]
+
+Les valeurs non finies (\texttt{NaN}, infinis) sont ignorees dans les moyennes, RMS et quantiles lorsque le code utilise les fonctions \texttt{safe\_*}. On note :
+\[
+  \finite(x)=\{i \mid x_i \text{ est fini}\}.
+\]
+
+Pour un vecteur $x$, les statistiques de base utilisees sont :
+\[
+  \overline{x}=\frac{1}{|\finite(x)|}\sum_{i\in\finite(x)}x_i,
+  \qquad
+  \RMS(x)=\sqrt{\frac{1}{|\finite(x)|}\sum_{i\in\finite(x)}x_i^2},
+\]
+\[
+  \max |x| = \max_{i\in\finite(x)} |x_i|,
+  \qquad
+  q_{95}(|x|)=\text{quantile a 95\% de } |x_i|.
+\]
+
+La derivee numerique est calculee par gradient sur les points finis :
+\[
+  \dot{x}_i \simeq \nabla x_i / \Delta t.
+\]
+
+\section{Normalisation des canaux}
+
+Le module \texttt{dxd\_schema.py} transforme les noms sources Dewesoft en noms canoniques. Exemples :
+
+\begin{longtable}{lll}
+\toprule
+Nom source & Nom canonique & Conversion \\
+\midrule
+\texttt{VelX (km/h)} & \texttt{vehicle.vx} & $v_x = \text{VelX}/3.6$ \\
+\texttt{VelY (km/h)} & \texttt{vehicle.vy} & $v_y = \text{VelY}/3.6$ \\
+\texttt{Vel (km/h)} & \texttt{vehicle.speed} & $v = \text{Vel}/3.6$ \\
+\texttt{VehYaw\_W\_Actl (rad/s)} & \texttt{vehicle.yaw\_rate} & identite \\
+\texttt{VehLong\_A\_Actl (m/s\^{}2)} & \texttt{vehicle.ax} & identite \\
+\texttt{VehLat\_A\_Actl (m/s\^{}2)} & \texttt{vehicle.ay} & identite \\
+\texttt{Latitude (\_)} & \texttt{gps.latitude} & identite \\
+\texttt{Longitude (\_)} & \texttt{gps.longitude} & identite \\
+\bottomrule
+\end{longtable}
+
+En general, si un canal source $y^{raw}$ a une echelle $s$ et un offset $b$, le canal canonique vaut :
+\[
+  y = s\,y^{raw}+b.
+\]
+
+\section{Lecture DXD, nettoyage et resampling}
+
+Pour chaque canal lu dans un fichier DXD, le code :
+
+\begin{enumerate}[label=\arabic*.]
+  \item extrait les couples $(t_i,y_i)$ ;
+  \item supprime les couples non finis ;
+  \item trie par temps croissant ;
+  \item supprime les doublons temporels en gardant la premiere occurrence ;
+  \item calcule l'intersection temporelle commune a tous les canaux selectionnes :
+  \[
+    t_{\min}=\max_c t^{(c)}_0,\qquad
+    t_{\max}=\min_c t^{(c)}_{\mathrm{fin}}.
+  \]
+\end{enumerate}
+
+La grille commune est :
+\[
+  t_k = t_{\min}+k\Delta t,\qquad t_k \le t_{\max}+0.5\Delta t.
+\]
+
+Chaque canal est interpole lineairement :
+\[
+  y_c(t_k)=\operatorname{interp}(t_k; t^{(c)}, y^{(c)}),
+\]
+avec \texttt{NaN} a gauche et a droite hors du support du canal.
+
+\section{Canaux derives dans l'export JSON}
+
+Le script \texttt{00\_scan\_dxd\_channel\_presence.py} ajoute certains residus derives au JSON.
+Ces residus sont calcules sur les noms sources avant normalisation complete.
+
+\subsection{Coherence laterale simple}
+
+Si $a_y$, $v_x$ et $r$ sont disponibles :
+\[
+  e_{lat}(t)=a_y(t)-v_x(t)r(t).
+\]
+Le JSON contient aussi un RMS glissant sur une fenetre de duree $T_r=2~\mathrm{s}$ par defaut :
+\[
+  S_{lat}(i)=
+  \sqrt{
+    \frac{1}{|\mathcal{W}_i|}
+    \sum_{j\in\mathcal{W}_i} e_{lat}(j)^2
+  },
+\]
+ou $\mathcal{W}_i$ est la fenetre retrospective de longueur $T_r$ finissant en $i$.
+
+\subsection{Differences de vitesses de roues}
+
+Les residus de roues exportes dans le JSON sont :
+\[
+\begin{aligned}
+  e_{front}(t) &= \omega_{fl}(t)-\omega_{fr}(t),\\
+  e_{rear}(t)  &= \omega_{rl}(t)-\omega_{rr}(t),\\
+  e_{left}(t)  &= \omega_{fl}(t)-\omega_{rl}(t),\\
+  e_{right}(t) &= \omega_{fr}(t)-\omega_{rr}(t).
+\end{aligned}
+\]
+Chaque residu possede egalement un RMS glissant sur $T_r$.
+
+\subsection{Steer, camber et acceleration longitudinale}
+
+Pour les deux voies de direction et de carrossage :
+\[
+  e_{\delta}(t)=\delta_{S1}(t)+\delta_{S2}(t),
+  \qquad
+  e_{\gamma}(t)=\gamma_{S1}(t)-\gamma_{S2}(t).
+\]
+
+Pour l'acceleration longitudinale :
+\[
+  e_{ax}(t)=a_x(t)-\frac{d v_x}{dt}(t).
+\]
+
+\section{Features globales et glissantes dans le JSON}
+
+Pour chaque canal brut ou derive $y(t)$, le JSON contient des features globales :
+\[
+  n_{valid},\quad \overline{y},\quad \sigma_y,\quad \min y,\quad \max y,\quad \RMS(y),\quad E_y.
+\]
+L'energie est :
+\[
+  E_y=\sum_{i\in\finite(y)} y_i^2\,\Delta t.
+\]
+
+Les features glissantes sont calculees par fenetres de duree $T_w=4~\mathrm{s}$ et pas $T_s=1~\mathrm{s}$ par defaut :
+\[
+  \mathcal{W}_m=\{i_m,\ldots,i_m+n_w-1\},\qquad
+  n_w=\operatorname{round}(T_w/\Delta t).
+\]
+Pour chaque fenetre, le code stocke :
+\[
+  \overline{y}_{\mathcal{W}},\quad
+  \sigma_{y,\mathcal{W}},\quad
+  \RMS(y_{\mathcal{W}}),\quad
+  \min_{\mathcal{W}}y,\quad
+  \max_{\mathcal{W}}y.
+\]
+
+Quelques correlations globales sont aussi calculees sur des paires fixes :
+\[
+  \rho(x,y)=
+  \frac{\sum_i (x_i-\overline{x})(y_i-\overline{y})}
+       {\sqrt{\sum_i(x_i-\overline{x})^2}\sqrt{\sum_i(y_i-\overline{y})^2}}.
+\]
+
+\section{Fenetrage pour l'index qualite}
+
+Le script \texttt{build\_window\_quality\_index.py} lit les JSON resamples et reconstruit des fenetres de duree $T_w=4~\mathrm{s}$ avec un pas $T_s=1~\mathrm{s}$ :
+\[
+  n_w=\max(2,\operatorname{round}(T_w/\Delta t)),\qquad
+  n_s=\max(1,\operatorname{round}(T_s/\Delta t)).
+\]
+Les fenetres sont :
+\[
+  \mathcal{W}_m = \{m n_s,\ldots,m n_s+n_w-1\}.
+\]
+
+Pour chaque fenetre, les statistiques dynamiques principales sont :
+\[
+  \overline{v_x},\quad
+  \overline{v_x}^{km/h}=3.6\,\overline{v_x},\quad
+  \RMS(a_x),\quad
+  \RMS(a_y),\quad
+  \RMS(r),\quad
+  \RMS(\delta).
+\]
+
+Deux ratios de vitesse sont calcules :
+\[
+  p_{zero}=\frac{1}{|\finite(v_x)|}\sum_{i\in\finite(v_x)}\mathbf{1}(|v_x(i)|<1/3.6),
+\]
+\[
+  p_{low}=\frac{1}{|\finite(v_x)|}\sum_{i\in\finite(v_x)}\mathbf{1}(|v_x(i)|<5/3.6).
+\]
+
+\section{Qualite de signal par canal}
+
+Pour chaque canal de qualite, dans une fenetre $\mathcal{W}$ :
+\[
+  r_{finite}=\frac{\#\{i\in\mathcal{W}\mid y_i\text{ fini}\}}{|\mathcal{W}|}.
+\]
+Le score de presence vaut :
+\[
+  s_{finite}=
+  \begin{cases}
+    1.0 & \text{si } r_{finite}\ge 0.95,\\
+    0.5 & \text{si } 0.80\le r_{finite}<0.95,\\
+    0.0 & \text{sinon.}
+  \end{cases}
+\]
+
+Les spikes sont detectes sur les differences successives des valeurs finies :
+\[
+  d_j=y_{j+1}-y_j.
+\]
+Si $\sigma_d>10^{-12}$, le nombre de spikes est :
+\[
+  n_{spike}=\#\{j\mid |d_j|>6\sigma_d\}.
+\]
+La penalite est :
+\[
+  p_{spike}=\min\left(0.5,\frac{n_{spike}}{|\mathcal{W}|}\right).
+\]
+Le score canal est :
+\[
+  s_{canal}=\max(0,s_{finite}-p_{spike}).
+\]
+Le score global de qualite signal est la moyenne des scores canaux disponibles :
+\[
+  S_{signal}=\operatorname{mean}\{s_{canal,c}\}.
+\]
+
+\section{Residus physiques de l'index qualite}
+
+Les residus suivants sont calcules sur toute l'acquisition, puis resumes par fenetre via moyenne, RMS, maximum absolu et quantile absolu a 95\%.
+
+\subsection{Cinematique longitudinale}
+
+\[
+  r_{ax}(t)=a_x(t)-\frac{d v_x}{dt}(t).
+\]
+
+\subsection{Cinematique laterale}
+
+Mode simple :
+\[
+  r_{ay,simple}(t)=a_y(t)-v_x(t)r(t).
+\]
+
+Mode avec vitesse laterale :
+\[
+  r_{ay}(t)=a_y(t)-\left(\frac{d v_y}{dt}(t)+v_x(t)r(t)\right).
+\]
+
+\subsection{Distance GPS}
+
+Si une distance GPS curviligne $d_{gps}(t)$ est disponible, avec $v_{ref}=v$ si la vitesse scalaire est disponible, sinon $v_x$ :
+\[
+  r_{dist}(t)=\frac{d d_{gps}}{dt}(t)-v_{ref}(t).
+\]
+
+\subsection{Courbure}
+
+Si le rayon GPS $R_{gps}$ est disponible :
+\[
+  \kappa_{gps}(t)=\frac{1}{R_{gps}(t)}.
+\]
+La courbure vehicule est :
+\[
+  \kappa_{veh}(t)=
+  \begin{cases}
+    \dfrac{r(t)}{\max(|v_x(t)|,5/3.6)} & \text{si } |v_x(t)|\ge 5/3.6,\\
+    \mathrm{NaN} & \text{sinon.}
+  \end{cases}
+\]
+Le residu est :
+\[
+  r_{\kappa}(t)=\kappa_{gps}(t)-\kappa_{veh}(t).
+\]
+
+\subsection{Roues}
+
+Si les quatre vitesses de roues sont disponibles :
+\[
+  r_{wheel}(t)=\operatorname{std}\left(
+  \omega_{fl}(t),\omega_{fr}(t),\omega_{rl}(t),\omega_{rr}(t)
+  \right).
+\]
+
+\subsection{Calibration IMU}
+
+\[
+  r_{imu,x}(t)=a_{imu,x}(t)-a_x(t),
+  \quad
+  r_{imu,y}(t)=a_{imu,y}(t)-a_y(t),
+  \quad
+  r_{imu,z}(t)=a_{imu,z}(t)-a_z(t).
+\]
+
+\section{Residus GPS}
+
+\subsection{Projection latitude/longitude en repere local}
+
+Les latitudes et longitudes valides sont filtrees. Avec le premier point valide comme origine $(\varphi_0,\lambda_0)$, et $R_T=6\,371\,000~\mathrm{m}$ :
+\[
+  x_{gps}=R_T\cos(\varphi_0)(\lambda-\lambda_0),
+  \qquad
+  y_{gps}=R_T(\varphi-\varphi_0),
+\]
+ou les angles sont en radians.
+
+\subsection{Vitesse GPS}
+
+Les positions GPS sont lissees par moyenne mobile d'environ $0.5~\mathrm{s}$, puis derivees :
+\[
+  v_{gps,x}=\frac{d x_{gps}}{dt},\qquad
+  v_{gps,y}=\frac{d y_{gps}}{dt},
+\]
+\[
+  v_{gps}=\sqrt{v_{gps,x}^2+v_{gps,y}^2}.
+\]
+Les residus de vitesse GPS sont :
+\[
+  r_{gps,speed}=v_{gps}-v_{ref},
+\]
+\[
+  r_{gps,body}=v_{gps}-\sqrt{v_x^2+v_y^2},
+\]
+ou, si $v_y$ est absent, $\sqrt{v_x^2+v_y^2}$ est remplace par $|v_x|$.
+
+\subsection{Integration trajectoire vehicule}
+
+L'angle de cap initial $\psi_0$ vient d'abord de la trajectoire GPS dans la fenetre si le deplacement total depasse $5~\mathrm{m}$, sinon du canal \texttt{gps.track}, sinon d'une derivee de trajectoire, sinon $0$.
+
+Le yaw rate est integre :
+\[
+  \psi_i=\psi_0+\sum_{k=0}^{i} r_k\Delta t.
+\]
+La vitesse corps est projetee dans le repere monde :
+\[
+  \dot{x}_{veh}=v_x\cos\psi-v_y\sin\psi,
+  \qquad
+  \dot{y}_{veh}=v_x\sin\psi+v_y\cos\psi.
+\]
+Puis :
+\[
+  x_{veh,i}=x_{veh,0}+\sum_{k=1}^{i}\dot{x}_{veh,k}\Delta t,
+  \qquad
+  y_{veh,i}=y_{veh,0}+\sum_{k=1}^{i}\dot{y}_{veh,k}\Delta t.
+\]
+
+L'erreur de position brute est :
+\[
+  r_{gps,pos}(i)=
+  \sqrt{(x_{gps,i}-x_{veh,i})^2+(y_{gps,i}-y_{veh,i})^2}.
+\]
+
+\subsection{Erreur GPS alignee}
+
+Pour une fenetre locale, le code centre la trajectoire GPS et la trajectoire integree, puis cherche une rotation 2D de type Procrustes.
+Si $p_i$ est la position GPS centree et $q_i$ la position integree centree :
+\[
+  d=\sum_i q_{x,i}p_{x,i}+q_{y,i}p_{y,i},
+  \qquad
+  c=\sum_i q_{x,i}p_{y,i}-q_{y,i}p_{x,i},
+\]
+\[
+  \theta=\operatorname{atan2}(c,d).
+\]
+La trajectoire integree est tournee de $\theta$, recentree sur le GPS, puis l'erreur alignee vaut :
+\[
+  r_{gps,pos,aligned}(i)=\|p_i-\tilde{q}_i\|_2.
+\]
+
+\subsection{Yaw rate GPS}
+
+Si \texttt{gps.track} existe, le cap GPS est unwrappe et derive :
+\[
+  r_{gps,yaw}(t)=\frac{d\psi_{gps}}{dt}(t)-r(t),
+\]
+uniquement lorsque la vitesse corps est superieure au seuil basse vitesse $5/3.6~\mathrm{m/s}$.
+
+\section{Transformation residu vers score}
+
+Chaque residu RMS peut etre transforme en score par :
+\[
+  s(e;\tau)=\frac{1}{1+\max(e,0)/\tau}.
+\]
+Un residu nul donne $1$. Un residu egal a $\tau$ donne $0.5$.
+
+Les seuils $\tau$ utilises sont :
+
+\begin{longtable}{ll}
+\toprule
+Score & Residus et seuils \\
+\midrule
+\texttt{kinematic\_score} &
+$r_{dist}$ avec $\tau=1.5$, $r_{\kappa}$ avec $\tau=0.05$ \\
+\texttt{acceleration\_score} &
+$r_{ax}$ avec $\tau=1.0$, $r_{ay}$ et $r_{ay,simple}$ avec $\tau=1.5$ \\
+\texttt{gps\_score} &
+$r_{gps,pos}$ avec $\tau=10$, $r_{gps,pos,aligned}$ avec $\tau=5$,
+$r_{gps,speed}$ et $r_{gps,body}$ avec $\tau=2$, $r_{gps,yaw}$ avec $\tau=0.2$ \\
+\texttt{wheel\_score} &
+$r_{wheel}$ avec $\tau=1.0$ \\
+\texttt{calibration\_score} &
+$r_{imu,x}$, $r_{imu,y}$, $r_{imu,z}$ avec $\tau=1.0$ \\
+\bottomrule
+\end{longtable}
+
+Les moyennes ignorent les scores absents :
+\[
+  S_{phys}=\operatorname{mean}(S_{kin},S_{acc},S_{gps},S_{wheel},S_{calib}),
+\]
+\[
+  S_{global}=\operatorname{mean}(S_{signal},S_{phys}).
+\]
+
+Important : dans le code actuel, $S_{global}$ est un score absolu par fenetre. Il n'est pas normalise par cluster. Le clustering ajoute un contexte de comparaison mais ne modifie pas ce score.
+
+\section{Scores d'excitation et flags d'usage}
+
+Les scores d'excitation sont :
+\[
+  S_{lat\_exc}=\min\left(1,\frac{\RMS(a_y)}{3}\right),
+  \qquad
+  S_{long\_exc}=\min\left(1,\frac{\RMS(a_x)}{2}\right).
+\]
+
+Les flags d'usage sont :
+\[
+  \texttt{usable\_for\_regression}
+  =
+  (S_{global}\ge 0.65)\land(p_{low}<0.5),
+\]
+\[
+  \texttt{usable\_for\_lateral\_identification}
+  =
+  \texttt{usable\_for\_regression}\land(S_{lat\_exc}\ge 0.25),
+\]
+\[
+  \texttt{usable\_for\_longitudinal\_identification}
+  =
+  \texttt{usable\_for\_regression}\land(S_{long\_exc}\ge 0.25),
+\]
+\[
+  \texttt{usable\_for\_tire\_parameter\_estimation}
+  =
+  \texttt{usable\_for\_lateral\_identification}
+  \land
+  (r_{wheel}\text{ a le statut computed}),
+\]
+\[
+  \texttt{usable\_for\_indicator\_computation}
+  =
+  (S_{signal}\ge 0.8).
+\]
+
+\section{Bins et familles de manoeuvre}
+
+Les bins vitesse sont construits sur $\overline{v_x}^{km/h}$ :
+\[
+  [0,20),[20,40),[40,60),[60,80),[80,100),[100,120),
+\]
+sinon \texttt{out\_of\_range} ou \texttt{unknown}.
+
+Les bins d'acceleration laterale :
+\[
+\begin{cases}
+\texttt{faible} & \RMS(a_y)<1,\\
+\texttt{moyen} & 1\le \RMS(a_y)<3,\\
+\texttt{fort} & 3\le \RMS(a_y)<6,\\
+\texttt{tres\_fort} & \RMS(a_y)\ge 6.
+\end{cases}
+\]
+
+Les bins d'acceleration longitudinale :
+\[
+\begin{cases}
+\texttt{faible} & \RMS(a_x)<0.5,\\
+\texttt{moyen} & 0.5\le \RMS(a_x)<2,\\
+\texttt{fort} & \RMS(a_x)\ge 2.
+\end{cases}
+\]
+
+La direction de manoeuvre est determinee par le yaw rate :
+\[
+  f_+=\Pr(r>0.03),\qquad f_-=\Pr(r<-0.03).
+\]
+Si $f_+>0.2$ et $f_->0.2$, la direction est \texttt{mixed}. Sinon le signe de la moyenne de $r$ donne \texttt{left}, \texttt{right} ou \texttt{straight}.
+
+La famille de manoeuvre suit les regles :
+\[
+\begin{array}{ll}
+\texttt{stopped} & \overline{v_x}^{km/h}<1,\\
+\texttt{straight} & \overline{v_x}^{km/h}\ge 5,\ \RMS(a_y)<0.5,\ \RMS(r)<0.03,\ \RMS(\delta)<0.02,\\
+\texttt{lateral} & \RMS(a_y)\ge 1,\ \RMS(r)\ge 0.05,\ \RMS(a_x)<1,\\
+\texttt{longitudinal} & \RMS(a_x)\ge 1,\ \RMS(a_y)<1,\\
+\texttt{combined} & \RMS(a_x)\ge 1,\ \RMS(a_y)\ge 1,\\
+\texttt{unknown} & \text{sinon.}
+\end{array}
+\]
+
+L'identifiant de groupe de similarite est une concatenation :
+\[
+\texttt{family\_\_v\_speedBin\_\_ay\_latBin\_\_steer\_steerBin\_\_dir\_direction}.
+\]
+
+\section{Clustering de fenetres comparables}
+
+Le script \texttt{build\_window\_cluster\_index.py} lit \texttt{window\_quality\_index.csv}.
+Les features utilisees pour clusteriser sont :
+\[
+\begin{aligned}
+  z = (&\overline{v_x}^{km/h},\RMS(a_x),\RMS(a_y),\RMS(r),\RMS(\delta),\\
+       &p_{zero},p_{low},S_{lat\_exc},S_{long\_exc}).
+\end{aligned}
+\]
+Seules les colonnes disponibles sont gardees. Il faut au moins trois features.
+
+Le clustering est fait separement par valeur de \texttt{maneuver\_family}, si le groupe contient au moins \texttt{min\_group\_size}=30 fenetres.
+
+\subsection{Standardisation robuste}
+
+Pour chaque feature $x$ dans un groupe :
+\[
+  m=\median(x),\qquad
+  q_{25}=Q_{0.25}(x),\qquad
+  q_{75}=Q_{0.75}(x),
+\]
+\[
+  s=q_{75}-q_{25}.
+\]
+Si $s$ est nul ou non fini, le code utilise l'ecart-type ; si celui-ci est aussi nul, $s=1$.
+Les valeurs manquantes sont remplacees par la mediane, puis :
+\[
+  \tilde{x}_i=\frac{x_i-m}{s}.
+\]
+
+\subsection{DBSCAN}
+
+Dans l'espace standardise $\tilde{z}$, le voisinage de rayon $\varepsilon=1.35$ est :
+\[
+  \mathcal{N}_{\varepsilon}(i)=\{j\mid \|\tilde{z}_j-\tilde{z}_i\|_2\le \varepsilon\}.
+\]
+Un point est coeur si :
+\[
+  |\mathcal{N}_{\varepsilon}(i)|\ge \texttt{min\_samples}=18.
+\]
+Les clusters sont les composantes connectees atteignables depuis les points coeurs. Les points non atteints restent \texttt{noise}.
+
+\subsection{Distance au centre de cluster}
+
+Pour chaque cluster $C$, le centre robuste est :
+\[
+  c_C=\median\{\tilde{z}_i\mid i\in C\}
+\]
+calcule composante par composante. La distance stockee est :
+\[
+  d_i=\|\tilde{z}_i-c_C\|_2.
+\]
+
+Le fichier \texttt{window\_cluster\_index.csv} reprend toutes les colonnes de \texttt{window\_quality\_index.csv} et ajoute notamment :
+\[
+  \texttt{cluster\_id},\quad
+  \texttt{cluster\_label},\quad
+  \texttt{cluster\_is\_noise},\quad
+  \texttt{cluster\_size},\quad
+  \texttt{cluster\_distance\_to\_center}.
+\]
+
+\section{Agregation par date et vitesse}
+
+Le script \texttt{build\_speed\_day\_summary.py} groupe les fenetres par :
+\[
+  (\texttt{date},\texttt{speed\_bin}).
+\]
+Pour chaque colonne numerique $x$, il calcule :
+\[
+  \operatorname{mean}(x),\qquad
+  \median(x),\qquad
+  Q_{0.95}(x).
+\]
+Pour chaque flag booleen $b$, il calcule le ratio :
+\[
+  \operatorname{ratio}(b)=\frac{1}{n}\sum_{i=1}^{n}\mathbf{1}(b_i=\text{True}).
+\]
+Il stocke aussi le nombre de fenetres, le nombre de fichiers et la famille de manoeuvre dominante.
+
+\section{Index de drift}
+
+\texttt{build\_drift\_index.py} ne recalcule pas de nouvelle metrique physique.
+Il lit les JSON exportes, extrait les features globales par canal et les regroupe dans \texttt{drift\_index.json}.
+La logique mathematique est donc celle des features globales de la section precedente.
+
+\section{Index d'anomalies de correlation}
+
+Le script \texttt{build\_correlation\_anomaly\_index.py} exploite les moyennes de fenetres glissantes des JSON :
+\[
+  x_w=\operatorname{mean}_{\mathcal{W}}(x),\qquad
+  y_w=\operatorname{mean}_{\mathcal{W}}(y).
+\]
+
+\subsection{Reference robuste par piste}
+
+Les fichiers sont regroupes par \texttt{track\_id}, derive du nom de fichier.
+Pour chaque paire de capteurs $(x,y)$ et chaque piste, le code collecte les couples $(x_w,y_w)$.
+
+Les echelles robustes sont :
+\[
+  m_x=\median(x_w),\qquad
+  s_x=1.4826\,\median(|x_w-m_x|),
+\]
+\[
+  m_y=\median(y_w),\qquad
+  s_y=1.4826\,\median(|y_w-m_y|).
+\]
+Les valeurs standardisees sont :
+\[
+  z_x=\frac{x_w-m_x}{s_x},\qquad
+  z_y=\frac{y_w-m_y}{s_y}.
+\]
+La correlation de reference est :
+\[
+  \rho=\operatorname{corr}(z_x,z_y).
+\]
+
+Le residu relationnel est :
+\[
+  r_{rel}=\frac{z_y-\rho z_x}{\sqrt{\max(1-\rho^2,0.10)}}.
+\]
+Sa reference robuste est :
+\[
+  m_r=\median(r_{rel}),\qquad
+  s_r=\max(1.4826\,\median(|r_{rel}-m_r|),0.50).
+\]
+
+\subsection{Score d'anomalie relationnelle}
+
+Pour une fenetre donnee :
+\[
+  A=\frac{|r_{rel}-m_r|}{s_r}.
+\]
+Une anomalie candidate est gardee si :
+\[
+  A\ge 2.5.
+\]
+La severite est :
+\[
+\begin{cases}
+\texttt{high} & A\ge 5.0,\\
+\texttt{medium} & 3.5\le A<5.0,\\
+\texttt{low} & A<3.5.
+\end{cases}
+\]
+
+\section{Flux historique : export 01 et features 02}
+
+\subsection{Export historique 01}
+
+\texttt{01\_export\_dxd\_resampled\_json.py} selectionne seulement les fichiers qui possedent tous les canaux cibles, construit une grille a $100~\mathrm{Hz}$, interpole les canaux et exporte un JSON canonique. Il ne calcule pas les residus physiques avances de l'index qualite.
+
+\subsection{Features univariees 02}
+
+\texttt{02\_extract\_features.py} construit des fenetres de $1~\mathrm{s}$ avec un pas de $1~\mathrm{s}$ par defaut.
+Les canaux sont gardes si leur ratio global de valeurs finies est au moins $0.90$ et s'il reste au moins trois canaux.
+
+Dans chaque fenetre, les valeurs manquantes de chaque canal sont interpolees. Si un canal est entierement manquant dans une fenetre, la fenetre est rejetee.
+
+Pour chaque canal $y$, les features sont :
+\[
+\begin{aligned}
+&\overline{y},\ \sigma_y,\ \min y,\ \max y,\ \max y-\min y,\ \median(y),\\
+&Q_{0.25}(y),\ Q_{0.75}(y),\ \IQR(y),\ \operatorname{mean}(|y|),\ \RMS(y).
+\end{aligned}
+\]
+La pente lineaire est calculee par regression sur l'indice $i$ :
+\[
+  a=\frac{\sum_i (i-\overline{i})(y_i-\overline{y})}{\sum_i(i-\overline{i})^2}.
+\]
+Les differences donnent :
+\[
+  \sigma_{\Delta y}=\operatorname{std}(y_{i+1}-y_i),
+  \qquad
+  \max|\Delta y|=\max_i |y_{i+1}-y_i|.
+\]
+Le taux de changement de signe est :
+\[
+  ZCR=\frac{1}{n-1}\sum_{i=1}^{n-1}\mathbf{1}(\operatorname{sign}(y_{i+1})\ne \operatorname{sign}(y_i)).
+\]
+L'autocorrelation au lag 1 est :
+\[
+  \rho_1=
+  \frac{\sum_i (y_i-\overline{y_0})(y_{i+1}-\overline{y_1})}
+       {\sqrt{\sum_i(y_i-\overline{y_0})^2}\sqrt{\sum_i(y_{i+1}-\overline{y_1})^2}}.
+\]
+
+\section{Point important : qualite absolue versus qualite relative au cluster}
+
+Le calcul actuel produit :
+\[
+  S_{global}=\operatorname{mean}(S_{signal},S_{phys})
+\]
+avant clustering. Ce score mesure une qualite absolue au sens des seuils de residus fixes.
+
+Le clustering ne recalcule pas :
+\[
+  S_{global\mid cluster}
+\]
+et ne produit pas de percentile ou de z-score robuste des residus dans le cluster.
+
+Si l'objectif est de comparer une fenetre uniquement a des fenetres de dynamique similaire, une extension mathematiquement naturelle serait, pour chaque cluster $C$ et chaque residu $e$ :
+\[
+  z_{e,i}^{(C)}=
+  \frac{e_i-\median(e_j:j\in C)}
+       {\max(1.4826\,\median(|e_j-\median_C(e)|:j\in C),\epsilon)}.
+\]
+On pourrait ensuite definir un score relatif :
+\[
+  S_{cluster,i}
+  =
+  \frac{1}{1+\operatorname{mean}_{e\in\mathcal{E}} \max(z_{e,i}^{(C)},0)}
+\]
+ou bien un percentile de qualite dans le cluster. Cette extension n'est pas presente dans le code actuel.
+
+\end{document}

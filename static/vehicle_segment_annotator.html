@@ -1,0 +1,1798 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Annotateur Actif de Segments</title>
+  <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #090d16;
+      --panel: rgba(22, 30, 49, 0.7);
+      --panel-solid: #131b2e;
+      --panel-hover: rgba(30, 41, 71, 0.85);
+      --border: rgba(255, 255, 255, 0.08);
+      --border-focus: rgba(37, 99, 235, 0.5);
+      --text: #f1f5f9;
+      --muted: #94a3b8;
+      --blue: #2563eb;
+      --blue-hover: #3b82f6;
+      --green: #10b981;
+      --red: #ef4444;
+      --orange: #f59e0b;
+      --font-title: 'Outfit', sans-serif;
+      --font-body: 'Plus Jakarta Sans', sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+      transition: background-color 0.2s ease, border-color 0.2s ease;
+    }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-body);
+      overflow-x: hidden;
+    }
+
+    /* Layout */
+    .app-container {
+      display: grid;
+      grid-template-columns: 380px 1fr;
+      min-height: 100vh;
+    }
+
+    aside {
+      background: var(--panel-solid);
+      border-right: 1px solid var(--border);
+      height: 100vh;
+      overflow-y: auto;
+      position: sticky;
+      top: 0;
+      padding: 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    main {
+      padding: 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+      overflow-y: auto;
+      max-height: 100vh;
+    }
+
+    /* Headings */
+    h1 {
+      font-family: var(--font-title);
+      font-size: 22px;
+      font-weight: 700;
+      margin: 0;
+      background: linear-gradient(135deg, #60a5fa, #2563eb);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    h2 {
+      font-family: var(--font-title);
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--muted);
+      margin: 0;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 6px;
+    }
+
+    /* Links & Controls */
+    .btn-dashboard {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      color: var(--muted);
+      text-decoration: none;
+      font-size: 13px;
+      font-weight: 500;
+      margin-bottom: 4px;
+    }
+    .btn-dashboard:hover {
+      color: var(--text);
+    }
+
+    label {
+      font-size: 12px;
+      color: var(--muted);
+      font-weight: 500;
+      display: block;
+      margin-bottom: 6px;
+    }
+
+    input, select, textarea {
+      width: 100%;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: rgba(15, 23, 42, 0.6);
+      color: var(--text);
+      padding: 10px 12px;
+      font-family: var(--font-body);
+      font-size: 14px;
+      outline: none;
+    }
+    input:focus, select:focus, textarea:focus {
+      border-color: var(--blue);
+      box-shadow: 0 0 0 2px var(--border-focus);
+    }
+
+    button {
+      width: 100%;
+      border-radius: 8px;
+      border: none;
+      background: var(--blue);
+      color: #fff;
+      padding: 11px 16px;
+      font-family: var(--font-body);
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+    }
+    button:hover {
+      background: var(--blue-hover);
+    }
+    button.secondary {
+      background: rgba(51, 65, 85, 0.6);
+      border: 1px solid var(--border);
+    }
+    button.secondary:hover {
+      background: rgba(51, 65, 85, 0.9);
+    }
+    button.danger {
+      background: var(--red);
+    }
+    button.danger:hover {
+      background: #dc2626;
+    }
+    button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    /* Training Panel */
+    .train-box {
+      background: rgba(30, 41, 59, 0.4);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .progress-bar-container {
+      background: rgba(15, 23, 42, 0.8);
+      border-radius: 6px;
+      height: 8px;
+      width: 100%;
+      overflow: hidden;
+      display: none;
+    }
+    .progress-bar {
+      height: 100%;
+      background: linear-gradient(90deg, var(--blue), var(--green));
+      width: 0%;
+      transition: width 0.3s ease;
+    }
+
+    /* Active Learning List */
+    .search-box {
+      margin-bottom: 8px;
+    }
+    .file-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      max-height: 240px;
+      overflow-y: auto;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 6px;
+      background: rgba(15, 23, 42, 0.4);
+    }
+    .file-item {
+      padding: 8px 10px;
+      border-radius: 6px;
+      cursor: pointer;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: rgba(30, 41, 59, 0.3);
+      border: 1px solid transparent;
+      font-size: 13px;
+    }
+    .file-item:hover {
+      background: var(--panel-hover);
+      border-color: var(--border);
+    }
+    .file-item.active {
+      background: rgba(37, 99, 235, 0.15);
+      border-color: var(--blue);
+    }
+    .priority-badge {
+      font-size: 11px;
+      font-weight: 700;
+      padding: 2px 6px;
+      border-radius: 999px;
+      background: rgba(245, 158, 11, 0.2);
+      color: var(--orange);
+    }
+    .priority-badge.high {
+      background: rgba(239, 68, 68, 0.2);
+      color: var(--red);
+    }
+    .priority-badge.low {
+      background: rgba(16, 185, 129, 0.2);
+      color: var(--green);
+    }
+
+    /* Cards */
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border-radius: 14px;
+      padding: 16px;
+    }
+
+    /* Stats Grid */
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(6, 1fr);
+      gap: 12px;
+    }
+    .stat-card {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 10px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .stat-card small {
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+    }
+    .stat-card b {
+      font-size: 16px;
+      font-weight: 700;
+      color: var(--text);
+    }
+
+    /* Plot styles */
+    .plot {
+      width: 100%;
+      border-radius: 10px;
+      overflow: hidden;
+      border: 1px solid var(--border);
+    }
+
+    /* Click Target Mode Buttons */
+    .click-mode-toggle {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 6px;
+    }
+    .click-mode-toggle button {
+      padding: 8px;
+      font-size: 13px;
+    }
+    .click-mode-toggle button.active {
+      background: var(--green);
+    }
+
+    /* Main view columns */
+    .workspace-grid {
+      display: grid;
+      grid-template-columns: 1fr 340px;
+      gap: 20px;
+    }
+
+    .plots-column {
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    .controls-column {
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    /* Lists and Tables */
+    .suggestions-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      max-height: 250px;
+      overflow-y: auto;
+    }
+    .suggestion-card {
+      background: rgba(15, 23, 42, 0.4);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 8px 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .suggestion-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .suggestion-label {
+      font-weight: 600;
+      font-size: 12px;
+      color: var(--blue-hover);
+    }
+    .suggestion-prob {
+      font-size: 11px;
+      color: var(--muted);
+    }
+    .suggestion-times {
+      font-size: 11px;
+      color: var(--muted);
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+    th, td {
+      padding: 8px 12px;
+      text-align: left;
+      border-bottom: 1px solid var(--border);
+    }
+    th {
+      color: var(--muted);
+      font-weight: 500;
+    }
+    tr.editing {
+      outline: 1px solid var(--green);
+      background: rgba(16, 185, 129, 0.05);
+    }
+
+    .status-text {
+      font-size: 12px;
+      line-height: 1.4;
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+
+    /* Custom scrollbars */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: rgba(255, 255, 255, 0.12);
+      border-radius: 3px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: rgba(255, 255, 255, 0.24);
+    }
+  </style>
+</head>
+<body>
+  <div class="app-container">
+    <!-- Sidebar -->
+    <aside>
+      <a href="/" class="btn-dashboard">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+        Retour au dashboard
+      </a>
+      
+      <h1>
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+        Annotateur Actif
+      </h1>
+      
+      <!-- Training Status Box -->
+      <div class="train-box">
+        <h2>Entraînement Modèle</h2>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
+          <div>
+            <label for="cnnWindowSecInput">Fenêtre (s)</label>
+            <input type="number" id="cnnWindowSecInput" min="0.5" max="30" step="0.5" value="4.0">
+          </div>
+          <div>
+            <label for="cnnStrideSecInput">Stride (s)</label>
+            <input type="number" id="cnnStrideSecInput" min="0.1" max="10" step="0.1" value="1.0">
+          </div>
+        </div>
+        <button id="trainModelBtn">Lancer l'entraînement (CNN)</button>
+        <div id="trainStatusLabel" class="status-text text-muted">Aucun entraînement en cours.</div>
+        <div class="progress-bar-container" id="progressBarContainer">
+          <div class="progress-bar" id="progressBar"></div>
+        </div>
+      </div>
+
+      <!-- Active Learning Files List -->
+      <div style="display:flex; flex-direction:column; gap:8px;">
+        <h2>Fichiers Prioritaires</h2>
+        <div class="search-box">
+          <input type="text" id="fileSearchInput" placeholder="Filtrer les fichiers...">
+        </div>
+        <div class="file-list" id="fileList">
+          <div class="status-text" style="padding:10px;">Chargement...</div>
+        </div>
+      </div>
+
+      <!-- Segment Boundaries -->
+      <div style="display:flex; flex-direction:column; gap:10px;">
+        <h2>Segment Courant</h2>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
+          <div>
+            <label>Début (s)</label>
+            <input type="number" id="startInput" step="0.1">
+          </div>
+          <div>
+            <label>Fin (s)</label>
+            <input type="number" id="endInput" step="0.1">
+          </div>
+        </div>
+        <div>
+          <label>Ajuster Fin</label>
+          <input type="range" id="endRangeSlider" step="0.1">
+        </div>
+        <div style="display:flex; flex-direction:column; gap:6px;">
+          <label>Prochain clic vx(t)</label>
+          <div class="click-mode-toggle">
+            <button id="clickModeStartBtn" class="secondary">Début</button>
+            <button id="clickModeEndBtn" class="secondary active">Fin</button>
+          </div>
+        </div>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:4px;">
+          <button id="stepBackBtn" class="secondary">← Reculer</button>
+          <button id="stepForwardBtn" class="secondary">Avancer →</button>
+        </div>
+        <button id="resumeLastEndBtn" class="secondary">Reprendre à la fin</button>
+      </div>
+
+      <!-- Model summary metadata -->
+      <div class="train-box" style="margin-top:auto;">
+        <h2>CNN Baseline Info</h2>
+        <div id="cnnModelSummary" class="status-text">Chargement...</div>
+      </div>
+    </aside>
+
+    <!-- Main View -->
+    <main>
+      <!-- Real-time metrics -->
+      <div class="stats-grid">
+        <div class="stat-card">
+          <small>Début</small>
+          <b id="lblStart">—</b>
+        </div>
+        <div class="stat-card">
+          <small>Fin</small>
+          <b id="lblEnd">—</b>
+        </div>
+        <div class="stat-card">
+          <small>Durée</small>
+          <b id="lblDuration">—</b>
+        </div>
+        <div class="stat-card">
+          <small>vx Médiane</small>
+          <b id="lblVxMed">—</b>
+        </div>
+        <div class="stat-card">
+          <small>ay RMS</small>
+          <b id="lblAyRms">—</b>
+        </div>
+        <div class="stat-card">
+          <small>yaw RMS</small>
+          <b id="lblYawRms">—</b>
+        </div>
+      </div>
+
+      <div class="workspace-grid">
+        <!-- Plots Column -->
+        <div class="plots-column">
+          <div class="card" style="padding:10px;">
+            <div id="vxPlot" class="plot" style="height:350px;"></div>
+          </div>
+          <div class="card" style="padding:10px;">
+            <div id="gpsPlot" class="plot" style="height:380px;"></div>
+          </div>
+          
+          <!-- GPS Trajectory Filtering Controls Card -->
+          <div class="card" style="display:flex; flex-direction:column; gap:10px;">
+            <h2>Filtres Trajectoire GPS</h2>
+            <div style="display:flex; flex-wrap:wrap; gap:15px; font-size:13px;">
+              <label style="display:inline-flex; align-items:center; gap:6px; margin:0; cursor:pointer;">
+                <input type="checkbox" id="chkGpsShowFullTrack" checked style="width:auto; margin:0;"> Trajet complet (arrière-plan)
+              </label>
+              <label style="display:inline-flex; align-items:center; gap:6px; margin:0; cursor:pointer;">
+                <input type="checkbox" id="chkGpsShowAnnotations" checked style="width:auto; margin:0;"> Annotations existantes (traits pleins)
+              </label>
+              <label style="display:inline-flex; align-items:center; gap:6px; margin:0; cursor:pointer;">
+                <input type="checkbox" id="chkGpsShowPredictions" checked style="width:auto; margin:0;"> Prédictions modèle (pointillés)
+              </label>
+            </div>
+            <div style="display:flex; flex-direction:column; gap:6px; margin-top:4px;">
+              <label style="margin:0;">Filtrer par label (laisser vide pour tout afficher) :</label>
+              <div id="gpsLabelFilterList" style="display:flex; flex-wrap:wrap; gap:8px; max-height:100px; overflow-y:auto; border:1px solid var(--border); padding:8px; border-radius:8px; background:rgba(15,23,42,0.4);">
+                <!-- labels checkboxes list -->
+              </div>
+            </div>
+          </div>
+
+          <div class="card" style="padding:10px;">
+            <div id="dynPlot" class="plot" style="height:350px;"></div>
+          </div>
+        </div>
+
+        <!-- Controls Column -->
+        <div class="controls-column">
+          <!-- Save Annotation Form -->
+          <div class="card" style="display:flex; flex-direction:column; gap:12px;">
+            <h2>Enregistrer Annotation</h2>
+            <div>
+              <label>Classe</label>
+              <select id="labelSelect"></select>
+            </div>
+            <div>
+              <label>Classe personnalisée</label>
+              <input type="text" id="customLabelInput" placeholder="Optionnel...">
+            </div>
+            <div>
+              <label>Confiance</label>
+              <select id="confidenceSelect">
+                <option>0</option>
+                <option>1</option>
+                <option>2</option>
+                <option>3</option>
+                <option selected>4</option>
+                <option>5</option>
+              </select>
+            </div>
+            <div>
+              <label>Commentaire</label>
+              <textarea id="commentInput" placeholder="Ajouter un commentaire..."></textarea>
+            </div>
+            <button id="saveAnnotationBtn">Sauvegarder segment</button>
+            <button id="cancelEditBtn" class="secondary">Annuler modification</button>
+            <div id="saveStatusMessage" class="status-text" style="color:var(--green); font-weight:500;"></div>
+          </div>
+
+          <!-- Category Management Card -->
+          <div class="card" style="display:flex; flex-direction:column; gap:10px;">
+            <h2>Gestion des Labels</h2>
+            <div style="display:flex; gap:6px;">
+              <input type="text" id="newCategoryInput" placeholder="Nouveau label..." style="flex:1;">
+              <button onclick="addCustomCategory()" style="width:auto; padding:8px 12px; margin:0;">Ajouter</button>
+            </div>
+            <div id="categoriesManagerList" style="max-height:160px; overflow-y:auto; display:flex; flex-direction:column; gap:4px; padding-right:4px;">
+              <!-- category rows with Edit / Delete -->
+            </div>
+          </div>
+
+          <!-- Suggestions list -->
+          <div class="card" style="display:flex; flex-direction:column; gap:10px;">
+            <h2>Suggestions du Modèle</h2>
+            <div class="suggestions-list" id="suggestionsList">
+              <div class="status-text">Aucun fichier chargé.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Saved Annotations list -->
+      <div class="card">
+        <h2>Annotations Enregistrées</h2>
+        <div style="overflow-x:auto; margin-top:10px;">
+          <table id="annotationsTable">
+            <thead>
+              <tr>
+                <th>Label</th>
+                <th>Début</th>
+                <th>Fin</th>
+                <th>Durée</th>
+                <th>vx med</th>
+                <th>Conf.</th>
+                <th>Commentaire</th>
+                <th style="width:130px; text-align:right;">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="annotationsTableBody">
+              <tr>
+                <td colspan="8" style="text-align:center; color:var(--muted);">Aucune annotation.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <script>
+    const S = {
+      files: [],
+      selectedFileIndex: -1,
+      data: null,
+      start: 0,
+      end: 10,
+      defaultLen: 10,
+      annotations: [],
+      suggestions: [],
+      clickTarget: 'end',
+      timeStep: 0.1,
+      editingAnnotationId: null,
+      isTraining: false,
+      categories: [],
+      gpsShowFullTrack: true,
+      gpsShowAnnotations: true,
+      gpsShowPredictions: true,
+      gpsFilterLabels: []
+    };
+
+    const CLASS_COLORS = {
+      standstill: "#64748b",
+      low_speed_maneuver: "#94a3b8",
+      straight_constant_speed: "#10b981",
+      straight_acceleration: "#3b82f6",
+      straight_braking: "#ef4444",
+      cornering_left: "#ec4899",
+      cornering_right: "#a855f7",
+      combined_longitudinal_lateral: "#f59e0b",
+      mixed_or_unknown: "#64748b",
+      bad_segment: "#dc2626"
+    };
+
+    function getClassColor(label, fallback = "#3b82f6") {
+      return CLASS_COLORS[label] || fallback;
+    }
+
+    const DEFAULT_CATEGORIES = [
+      "standstill",
+      "low_speed_maneuver",
+      "straight_constant_speed",
+      "straight_acceleration",
+      "straight_braking",
+      "cornering_left",
+      "cornering_right",
+      "combined_longitudinal_lateral",
+      "mixed_or_unknown",
+      "bad_segment"
+    ];
+
+    // Helper functions
+    const E = id => document.getElementById(id);
+    const num = x => { const y = Number(x); return Number.isFinite(y) ? y : NaN; };
+    const arr = (a, n) => {
+      if (!Array.isArray(a)) return null;
+      const o = new Array(n).fill(NaN);
+      for (let i = 0; i < Math.min(n, a.length); i++) o[i] = num(a[i]);
+      return o;
+    };
+    const finite = a => (a || []).filter(Number.isFinite);
+    const q = (a, p) => {
+      const v = finite(a).sort((x, y) => x - y);
+      if (!v.length) return null;
+      const pos = (v.length - 1) * p;
+      const b = Math.floor(pos);
+      const r = pos - b;
+      return v[b + 1] !== undefined ? v[b] + r * (v[b + 1] - v[b]) : v[b];
+    };
+    const med = a => q(a, 0.5);
+    const mean = a => {
+      const v = finite(a);
+      return v.length ? v.reduce((x, y) => x + y, 0) / v.length : null;
+    };
+    const rms = a => {
+      const v = finite(a);
+      return v.length ? Math.sqrt(v.reduce((x, y) => x + y * y, 0) / v.length) : null;
+    };
+    const fmt = (x, n = 2, s = "") => {
+      x = Number(x);
+      return Number.isFinite(x) ? x.toFixed(n) + s : "-";
+    };
+    const minT = () => Math.min(...finite(S.data.time));
+    const maxT = () => Math.max(...finite(S.data.time));
+    const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
+    const esc = s => String(s || "").replace(/[&<>"']/g, m => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[m]));
+
+    async function api(path, opt) {
+      const r = await fetch(path, opt);
+      if (!r.ok) throw Error(await r.text());
+      return await r.json();
+    }
+
+    function normalizeData(raw) {
+      const n = (raw.time || []).length;
+      const c = raw.channels || {};
+      if (n < 2) throw Error("Timebase absent ou trop court");
+      
+      const val = k => arr(c[k]?.values, n);
+      return {
+        name: raw.json_name,
+        time: (raw.time || []).map(num),
+        channels: c,
+        signals: {
+          vx: val("vehicle.vx"),
+          speed: val("vehicle.speed"),
+          ax: val("vehicle.ax"),
+          ay: val("vehicle.ay"),
+          yaw: val("vehicle.yaw_rate"),
+          lat: val("gps.latitude"),
+          lon: val("gps.longitude"),
+          steer: val("WheelSteer_S1 (_)") || val("WheelSteer_S2 (_)") || val("WhlDirFl_D_Actl (-)") || val("WhlDirFr_D_Actl (-)")
+        }
+      };
+    }
+
+    function getSelectedLabel() {
+      const custom = String(E("customLabelInput").value || "").trim();
+      return custom || String(E("labelSelect").value || "").trim();
+    }
+
+    // Dynamic Categories / Labels Management
+    async function loadCategories() {
+      let stored = null;
+      try {
+        const val = localStorage.getItem("vehicle_segment_categories_v4");
+        if (val !== null) {
+          stored = JSON.parse(val);
+        }
+      } catch(e) {
+        stored = null;
+      }
+      
+      if (stored === null || !Array.isArray(stored)) {
+        stored = [...DEFAULT_CATEGORIES];
+        localStorage.setItem("vehicle_segment_categories_v4", JSON.stringify(stored));
+      }
+      
+      let backendLabels = [];
+      try {
+        const data = await api("/api/annotations/segments");
+        backendLabels = [...new Set((data.items || []).map(a => a.label).filter(Boolean))];
+      } catch(e) {}
+      
+      const merged = [...stored, ...backendLabels].map(s => String(s).trim()).filter(Boolean);
+      S.categories = [...new Set(merged)];
+      localStorage.setItem("vehicle_segment_categories_v4", JSON.stringify(S.categories));
+      
+      renderCategoryOptions();
+      await renderCategoriesManager();
+    }
+
+    function renderCategoryOptions() {
+      const select = E("labelSelect");
+      const current = select.value || "straight_constant_speed";
+      select.innerHTML = S.categories.map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join("");
+      if (S.categories.includes(current)) {
+        select.value = current;
+      }
+    }
+
+    async function renderCategoriesManager() {
+      const container = E("categoriesManagerList");
+      if (!container) return;
+      container.innerHTML = "";
+      
+      let allAnn = [];
+      try {
+        const data = await api("/api/annotations/segments");
+        allAnn = data.items || [];
+      } catch(e) {}
+      
+      const counts = {};
+      S.categories.forEach(c => counts[c] = 0);
+      allAnn.forEach(a => {
+        if (a.label) {
+          counts[a.label] = (counts[a.label] || 0) + 1;
+          if (!S.categories.includes(a.label)) {
+            S.categories.push(a.label);
+            counts[a.label] = 1;
+          }
+        }
+      });
+      
+      const sorted = S.categories.slice().sort((a,b) => {
+        const ca = counts[a] || 0;
+        const cb = counts[b] || 0;
+        if (ca !== cb) return cb - ca;
+        return a.localeCompare(b);
+      });
+      
+      sorted.forEach(cat => {
+        const n = counts[cat] || 0;
+        const row = document.createElement("div");
+        row.style = "display:flex; justify-content:space-between; align-items:center; padding:6px 0; border-bottom:1px solid var(--border); font-size:12px;";
+        row.innerHTML = `
+          <span style="font-weight:500; text-overflow:ellipsis; overflow:hidden; white-space:nowrap; max-width:140px;" title="${esc(cat)}">
+            ${esc(cat)} <small style="color:var(--muted)">(${n} ann.)</small>
+          </span>
+          <div style="display:flex; gap:4px;">
+            <button class="secondary rename-category-btn" style="width:auto; padding:2px 6px; font-size:10px; margin:0;">Renommer</button>
+            <button class="danger delete-category-btn" style="width:auto; padding:2px 6px; font-size:10px; margin:0;">Suppr</button>
+          </div>
+        `;
+        row.querySelector(".rename-category-btn").addEventListener("click", () => renameCategoryPrompt(cat));
+        row.querySelector(".delete-category-btn").addEventListener("click", () => deleteCategory(cat, n));
+        container.appendChild(row);
+      });
+    }
+
+    window.renameCategoryPrompt = async function(oldName) {
+      const newName = prompt(`Renommer le label "${oldName}" en :`, oldName);
+      if (!newName || newName.trim() === "" || newName.trim() === oldName) return;
+      
+      try {
+        const res = await api("/api/annotations/segments/rename-label", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ old_name: oldName, new_name: newName.trim() })
+        });
+        
+        S.categories = S.categories.map(c => c === oldName ? newName.trim() : c);
+        S.categories = [...new Set(S.categories)];
+        localStorage.setItem("vehicle_segment_categories_v4", JSON.stringify(S.categories));
+        
+        await loadCategories();
+        await loadAnnotations();
+        await loadModelPredictions();
+        render();
+        
+        alert(`Label renommé avec succès ! ${res.n_updated} annotations mises à jour.`);
+      } catch(e) {
+        alert("Erreur lors du renommage : " + e.message);
+      }
+    };
+
+    window.deleteCategory = async function(cat, annotationCount = 0) {
+      const message = annotationCount > 0
+        ? `Supprimer le label "${cat}" et ses ${annotationCount} annotation(s) ?`
+        : `Supprimer le label inutilisé "${cat}" ?`;
+      if (!confirm(message)) return;
+
+      try {
+        const res = await api("/api/annotations/labels/" + encodeURIComponent(cat), { method: "DELETE" });
+        S.categories = S.categories.filter(c => c !== cat);
+        S.gpsFilterLabels = S.gpsFilterLabels.filter(l => l !== cat);
+        if (E("labelSelect").value === cat) {
+          E("labelSelect").value = S.categories[0] || "";
+        }
+        if (S.editingAnnotationId && annotationCount > 0) {
+          S.editingAnnotationId = null;
+        }
+        localStorage.setItem("vehicle_segment_categories_v4", JSON.stringify(S.categories));
+
+        await loadAnnotations();
+        await loadModelPredictions();
+        await loadCategories();
+        renderGpsLabelFilters();
+        render();
+
+        if (res.n_deleted > 0) {
+          alert(`Label supprimé. ${res.n_deleted} annotation(s) supprimée(s).`);
+        }
+      } catch(e) {
+        alert("Erreur lors de la suppression du label : " + e.message);
+      }
+    };
+
+    window.addCustomCategory = function() {
+      const input = E("newCategoryInput");
+      const label = String(input.value || "").trim();
+      if (!label) return;
+      if (!S.categories.includes(label)) {
+        S.categories.push(label);
+        localStorage.setItem("vehicle_segment_categories_v4", JSON.stringify(S.categories));
+      }
+      loadCategories();
+      E("labelSelect").value = label;
+      input.value = "";
+    };
+
+    // Active learning files listing
+    async function loadFilesList(selectNameAfterLoad = null) {
+      try {
+        const data = await api("/api/annotator/active-learning-files");
+        S.files = data.items || [];
+        
+        renderFileListContainer();
+        
+        if (S.files.length > 0) {
+          let idx = 0;
+          if (selectNameAfterLoad) {
+            const foundIdx = S.files.findIndex(f => f.json_name === selectNameAfterLoad);
+            if (foundIdx !== -1) idx = foundIdx;
+          }
+          await selectFile(idx);
+        } else {
+          E("fileList").innerHTML = '<div class="status-text" style="padding:10px;">Aucun fichier trouvé.</div>';
+        }
+      } catch (e) {
+        E("fileList").innerHTML = '<div class="status-text" style="color:var(--red); padding:10px;">Erreur : ' + esc(e.message) + '</div>';
+      }
+    }
+
+    function renderFileListContainer() {
+      const query = E("fileSearchInput").value.toLowerCase();
+      const container = E("fileList");
+      container.innerHTML = "";
+      
+      const filtered = S.files.filter(f => f.json_name.toLowerCase().includes(query));
+      
+      if (filtered.length === 0) {
+        container.innerHTML = '<div class="status-text" style="padding:10px; color:var(--muted);">Aucun fichier correspondant.</div>';
+        return;
+      }
+
+      filtered.forEach(file => {
+        const idx = S.files.indexOf(file);
+        const item = document.createElement("div");
+        item.className = "file-item" + (S.selectedFileIndex === idx ? " active" : "");
+        
+        let pClass = "low";
+        if (file.priority > 10.0) pClass = "high";
+        else if (file.priority > 5.0) pClass = "medium";
+        
+        item.innerHTML = `
+          <div style="display:flex; flex-direction:column; gap:2px; min-width:0;">
+            <span style="font-weight:600; text-overflow:ellipsis; overflow:hidden; white-space:nowrap;">${esc(file.json_name)}</span>
+            <span style="font-size:11px; color:var(--muted);">
+              Ann: ${file.n_annotations} | H: ${fmt(file.uncertainty, 2)}
+            </span>
+          </div>
+          <span class="priority-badge ${pClass}">${fmt(file.priority, 1)}</span>
+        `;
+        
+        item.onclick = () => selectFile(idx);
+        container.appendChild(item);
+      });
+    }
+
+    async function selectFile(index) {
+      if (index < 0 || index >= S.files.length) return;
+      S.selectedFileIndex = index;
+      
+      const items = E("fileList").children;
+      Array.from(items).forEach((item, idx) => {
+        const file = S.files[idx];
+        if (file) {
+          const itemMatch = S.files.indexOf(file) === index;
+          item.classList.toggle("active", itemMatch);
+        }
+      });
+      
+      const fileMeta = S.files[index];
+      E("saveStatusMessage").textContent = "";
+      E("lblStart").textContent = "Chargement...";
+      
+      try {
+        const raw = await api("/api/annotator/file/" + encodeURIComponent(fileMeta.json_name));
+        S.data = normalizeData(raw);
+        
+        const ts = [];
+        for (let j = 1; j < S.data.time.length; j++) {
+          const dt = S.data.time[j] - S.data.time[j - 1];
+          if (dt > 0) ts.push(dt);
+        }
+        S.timeStep = ts.length ? ts.sort((a, b) => a - b)[Math.floor(ts.length / 2)] : 0.1;
+        
+        S.start = minT();
+        S.end = Math.min(maxT(), S.start + S.defaultLen);
+        S.editingAnnotationId = null;
+        
+        ensureSegment();
+        updateControls();
+        
+        await Promise.all([
+          loadAnnotations(),
+          loadModelPredictions()
+        ]);
+        
+        renderGpsLabelFilters();
+        render();
+      } catch (e) {
+        E("lblStart").textContent = "Erreur";
+        E("saveStatusMessage").innerHTML = '<span style="color:var(--red);">Erreur chargement : ' + esc(e.message) + '</span>';
+      }
+    }
+
+    async function loadAnnotations() {
+      if (!S.data) return;
+      try {
+        const data = await api("/api/annotations/segments?json_name=" + encodeURIComponent(S.data.name));
+        S.annotations = data.items || [];
+      } catch (e) {
+        S.annotations = [];
+      }
+    }
+
+    async function loadModelPredictions() {
+      if (!S.data) return;
+      E("suggestionsList").innerHTML = '<div class="status-text">Calcul des suggestions...</div>';
+      try {
+        const data = await api("/api/segment-model/file/" + encodeURIComponent(S.data.name) + "?stride_sec=2.0&smooth_radius=2");
+        S.suggestions = data.suggestions || [];
+        renderSuggestions();
+      } catch (e) {
+        S.suggestions = [];
+        E("suggestionsList").innerHTML = '<div class="status-text" style="color:var(--muted);">Suggestions indisponibles.</div>';
+      }
+    }
+
+    function renderSuggestions() {
+      const container = E("suggestionsList");
+      container.innerHTML = "";
+      
+      if (!S.suggestions.length) {
+        container.innerHTML = '<div class="status-text" style="color:var(--muted);">Aucune suggestion pour ce fichier.</div>';
+        return;
+      }
+      
+      S.suggestions.forEach((s, idx) => {
+        const card = document.createElement("div");
+        card.className = "suggestion-card";
+        
+        card.innerHTML = `
+          <div class="suggestion-header">
+            <span class="suggestion-label">${esc(s.label)}</span>
+            <span class="suggestion-prob">H: ${fmt(s.confidence, 2)}</span>
+          </div>
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-top:2px;">
+            <span class="suggestion-times">${fmt(s.start_sec, 1)}s → ${fmt(s.end_sec, 1)}s (${fmt(s.duration_sec, 1)}s)</span>
+            <button class="secondary" style="width:auto; padding:2px 8px; font-size:11px;" onclick="loadSuggestion(${idx})">Charger</button>
+          </div>
+        `;
+        container.appendChild(card);
+      });
+    }
+
+    window.loadSuggestion = function(idx) {
+      const s = S.suggestions[idx];
+      if (!s) return;
+      
+      S.editingAnnotationId = null;
+      S.start = Number(s.start_sec);
+      S.end = Number(s.end_sec);
+      
+      E("labelSelect").value = s.label;
+      E("customLabelInput").value = "";
+      E("commentInput").value = "";
+      E("confidenceSelect").value = "4";
+      
+      ensureSegment();
+      updateControls();
+      render();
+    };
+
+    // GPS Label filtering list rendering
+    function renderGpsLabelFilters() {
+      const container = E("gpsLabelFilterList");
+      if (!container) return;
+      
+      const labels = new Set();
+      S.annotations.forEach(a => labels.add(a.label));
+      S.suggestions.forEach(s => labels.add(s.label));
+      
+      const sortedLabels = Array.from(labels).sort();
+      const prevChecked = new Set(S.gpsFilterLabels);
+      container.innerHTML = "";
+      
+      if (sortedLabels.length === 0) {
+        container.innerHTML = '<span style="color:var(--muted); font-size:11px;">Aucun label disponible dans ce fichier.</span>';
+        return;
+      }
+      
+      sortedLabels.forEach(label => {
+        const isChecked = prevChecked.has(label) ? "checked" : "";
+        const lbl = document.createElement("label");
+        lbl.style = "display:inline-flex; align-items:center; gap:4px; margin:0; background:rgba(30,41,59,0.5); padding:2px 6px; border-radius:4px; font-size:11px; cursor:pointer;";
+        
+        const nAnn = S.annotations.filter(a => a.label === label).length;
+        const nPred = S.suggestions.filter(s => s.label === label).length;
+        
+        lbl.innerHTML = `
+          <input type="checkbox" data-label="${esc(label)}" ${isChecked} style="width:auto; margin:0;">
+          <span>${esc(label)} <small style="color:var(--muted)">(${nAnn}a, ${nPred}p)</small></span>
+        `;
+        
+        lbl.querySelector("input").addEventListener("change", (e) => {
+          if (e.target.checked) {
+            S.gpsFilterLabels.push(label);
+          } else {
+            S.gpsFilterLabels = S.gpsFilterLabels.filter(l => l !== label);
+          }
+          renderPlots();
+        });
+        
+        container.appendChild(lbl);
+      });
+    }
+
+    // CNN Model training controls & status polling
+    function metricRow(name, metrics) {
+      metrics = metrics || {};
+      return `
+        <tr>
+          <td style="padding:2px 6px 2px 0; color:var(--muted);">${name}</td>
+          <td style="padding:2px 6px; text-align:right;">${metrics.n_samples ?? 0}</td>
+          <td style="padding:2px 6px; text-align:right;">${fmt(metrics.loss, 3)}</td>
+          <td style="padding:2px 6px; text-align:right;">${fmt(metrics.accuracy, 3)}</td>
+          <td style="padding:2px 0 2px 6px; text-align:right;">${fmt(metrics.macro_f1, 3)}</td>
+        </tr>
+      `;
+    }
+
+    async function loadModelSummary() {
+      try {
+        const summary = await api("/api/segment-model/summary");
+        if (summary.status === "ok") {
+          if (!S.isTraining) {
+            E("cnnWindowSecInput").value = summary.window_sec ?? E("cnnWindowSecInput").value;
+            E("cnnStrideSecInput").value = summary.stride_sec ?? E("cnnStrideSecInput").value;
+          }
+          E("cnnModelSummary").innerHTML = `
+            <span style="color:var(--green); font-weight:600;">Modèle prêt</span><br>
+            Fenêtre: ${fmt(summary.window_sec, 1, " s")} | Stride: ${fmt(summary.stride_sec, 1, " s")}<br>
+            Classes: ${summary.n_classes} | Échantillons: ${summary.n_samples}<br>
+            <table style="width:100%; margin-top:6px; border-collapse:collapse; font-size:11px;">
+              <thead>
+                <tr style="color:var(--muted);">
+                  <th style="text-align:left; font-weight:500;">Split</th>
+                  <th style="text-align:right; font-weight:500;">N</th>
+                  <th style="text-align:right; font-weight:500;">Loss</th>
+                  <th style="text-align:right; font-weight:500;">Acc</th>
+                  <th style="text-align:right; font-weight:500;">F1</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${metricRow("Train", summary.train_metrics)}
+                ${metricRow("Val", summary.val_metrics)}
+                ${metricRow("Test", summary.test_metrics)}
+              </tbody>
+            </table>
+          `;
+        } else {
+          E("cnnModelSummary").innerHTML = '<span style="color:var(--muted);">Aucun modèle entraîné.</span>';
+        }
+      } catch (e) {
+        E("cnnModelSummary").textContent = "Modèle indisponible.";
+      }
+    }
+
+    async function trainModel() {
+      if (S.isTraining) return;
+      try {
+        const windowSec = Number(E("cnnWindowSecInput").value);
+        const strideSec = Number(E("cnnStrideSecInput").value);
+        if (!Number.isFinite(windowSec) || !Number.isFinite(strideSec)) {
+          throw Error("Fenêtre et stride doivent être numériques.");
+        }
+        if (strideSec > windowSec) {
+          throw Error("Le stride doit être inférieur ou égal à la taille de fenêtre.");
+        }
+        const res = await api("/api/segment-model/train", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ window_sec: windowSec, stride_sec: strideSec })
+        });
+        if (res.status === "started" || res.status === "already_running") {
+          S.isTraining = true;
+          E("trainModelBtn").disabled = true;
+          E("cnnWindowSecInput").disabled = true;
+          E("cnnStrideSecInput").disabled = true;
+          E("progressBarContainer").style.display = "block";
+          E("trainStatusLabel").textContent = `Entraînement lancé : fenêtre ${fmt(windowSec, 1, " s")}, stride ${fmt(strideSec, 1, " s")}`;
+          pollTrainingStatus();
+        }
+      } catch (e) {
+        E("trainStatusLabel").innerHTML = '<span style="color:var(--red);">Erreur : ' + esc(e.message) + '</span>';
+      }
+    }
+
+    async function pollTrainingStatus() {
+      if (!S.isTraining) return;
+      try {
+        const progress = await api("/api/segment-model/train/progress");
+        const bar = E("progressBar");
+        
+        if (progress.status === "running") {
+          const pct = Math.round((progress.epoch / progress.epochs) * 100);
+          bar.style.width = pct + "%";
+          E("trainStatusLabel").textContent = `Entraînement en cours : Epoch ${progress.epoch}/${progress.epochs}`;
+          setTimeout(pollTrainingStatus, 2000);
+        } else if (progress.status === "calculating_uncertainty") {
+          const total = progress.total || 1;
+          const current = progress.current || 0;
+          const pct = Math.round((current / total) * 100);
+          bar.style.width = pct + "%";
+          E("trainStatusLabel").textContent = `Calcul incertitude (${current}/${total}) : ${progress.file}`;
+          setTimeout(pollTrainingStatus, 2000);
+        } else if (progress.status === "finished") {
+          S.isTraining = false;
+          E("trainModelBtn").disabled = false;
+          E("cnnWindowSecInput").disabled = false;
+          E("cnnStrideSecInput").disabled = false;
+          E("progressBarContainer").style.display = "none";
+          E("trainStatusLabel").innerHTML = '<span style="color:var(--green); font-weight:600;">Entraînement terminé !</span>';
+          
+          await loadModelSummary();
+          const currentName = S.data ? S.data.name : null;
+          await loadFilesList(currentName);
+        } else if (progress.status === "error") {
+          S.isTraining = false;
+          E("trainModelBtn").disabled = false;
+          E("cnnWindowSecInput").disabled = false;
+          E("cnnStrideSecInput").disabled = false;
+          E("progressBarContainer").style.display = "none";
+          E("trainStatusLabel").innerHTML = '<span style="color:var(--red);">Erreur : ' + esc(progress.message) + '</span>';
+        } else {
+          S.isTraining = false;
+          E("trainModelBtn").disabled = false;
+          E("cnnWindowSecInput").disabled = false;
+          E("cnnStrideSecInput").disabled = false;
+          E("progressBarContainer").style.display = "none";
+          setTimeout(pollTrainingStatus, 2000);
+        }
+      } catch (e) {
+        setTimeout(pollTrainingStatus, 4000);
+      }
+    }
+
+    // Segment Boundaries helpers
+    function segmentMinLen() {
+      return Math.max(0.1, Number(S.timeStep) || 0.1);
+    }
+
+    function ensureSegment() {
+      const minLen = segmentMinLen();
+      const tMin = minT();
+      const tMax = maxT();
+      if (!Number.isFinite(S.start)) S.start = tMin;
+      if (!Number.isFinite(S.end)) S.end = Math.min(tMax, S.start + S.defaultLen);
+      
+      S.start = clamp(S.start, tMin, Math.max(tMin, tMax - minLen));
+      S.end = clamp(S.end, S.start + minLen, tMax);
+    }
+
+    function updateControls() {
+      ensureSegment();
+      E("startInput").value = S.start.toFixed(2);
+      E("endInput").value = S.end.toFixed(2);
+      E("endRangeSlider").min = Math.min(maxT(), S.start + segmentMinLen()).toFixed(2);
+      E("endRangeSlider").max = maxT().toFixed(2);
+      E("endRangeSlider").value = S.end.toFixed(2);
+    }
+
+    function setStart(x) {
+      S.start = clamp(x, minT(), Math.max(minT(), maxT() - segmentMinLen()));
+      if (S.end <= S.start) S.end = Math.min(maxT(), S.start + S.defaultLen);
+      ensureSegment();
+      updateControls();
+      render();
+    }
+
+    function setEnd(x) {
+      S.end = clamp(x, S.start + segmentMinLen(), maxT());
+      ensureSegment();
+      updateControls();
+      render();
+    }
+
+    function next() {
+      S.start = S.end;
+      S.end = Math.min(maxT(), S.start + S.defaultLen);
+      ensureSegment();
+      updateControls();
+      render();
+    }
+
+    function prev() {
+      const d = Math.max(segmentMinLen(), S.end - S.start);
+      S.end = S.start;
+      S.start = Math.max(minT(), S.start - d);
+      ensureSegment();
+      updateControls();
+      render();
+    }
+
+    function resume() {
+      const ends = S.annotations.map(a => Number(a.end_sec)).filter(Number.isFinite);
+      if (!ends.length) {
+        S.start = minT();
+        S.end = Math.min(maxT(), S.start + S.defaultLen);
+      } else {
+        S.start = Math.max(minT(), Math.max(...ends));
+        S.end = Math.min(maxT(), S.start + S.defaultLen);
+      }
+      ensureSegment();
+      updateControls();
+      render();
+    }
+
+    // Features calculations
+    function calculateFeatures() {
+      const d = S.data;
+      const idx = [];
+      for (let i = 0; i < d.time.length; i++) {
+        if (d.time[i] >= S.start && d.time[i] <= S.end) idx.push(i);
+      }
+      const take = a => a ? idx.map(i => a[i]) : [];
+      const o = {
+        start_idx: idx[0] ?? null,
+        end_idx: idx[idx.length - 1] ?? null,
+        duration_sec: S.end - S.start,
+        n_samples: idx.length
+      };
+
+      const keys = {
+        vx: d.signals.vx,
+        speed: d.signals.speed,
+        ax: d.signals.ax,
+        ay: d.signals.ay,
+        yaw_rate: d.signals.yaw,
+        steer: d.signals.steer
+      };
+
+      for (const [k, a] of Object.entries(keys)) {
+        if (!a) continue;
+        const v = take(a);
+        o[k + "_mean"] = mean(v);
+        o[k + "_median"] = med(v);
+        o[k + "_rms"] = rms(v);
+      }
+      if (o.vx_mean != null) o.vx_mean_kmh = o.vx_mean * 3.6;
+      if (o.vx_median != null) o.vx_median_kmh = o.vx_median * 3.6;
+      return o;
+    }
+
+    // Save and Delete Annotations
+    async function saveAnnotation() {
+      ensureSegment();
+      updateControls();
+      if (!(S.end > S.start)) return;
+      
+      const label = getSelectedLabel();
+      const f = calculateFeatures();
+      const fileMeta = S.files[S.selectedFileIndex];
+      const annotationId = S.data.name.replace(/\.json$/, "") + "__" + S.start.toFixed(3) + "_" + S.end.toFixed(3) + "__" + label;
+      
+      const row = {
+        annotation_id: annotationId,
+        json_name: S.data.name,
+        source_file: fileMeta.file,
+        file_id: fileMeta.file_id,
+        date: fileMeta.date,
+        modified_at: fileMeta.modified_at,
+        label: label,
+        start_sec: S.start,
+        end_sec: S.end,
+        comment: E("commentInput").value,
+        confidence: Number(E("confidenceSelect").value),
+        ...f
+      };
+
+      if (S.editingAnnotationId && S.editingAnnotationId !== annotationId) {
+        row.previous_annotation_id = S.editingAnnotationId;
+      }
+
+      try {
+        await api("/api/annotations/segments", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(row)
+        });
+        
+        S.editingAnnotationId = null;
+        E("commentInput").value = "";
+        E("customLabelInput").value = "";
+        
+        await loadAnnotations();
+        await loadModelPredictions();
+        await loadCategories();
+        renderGpsLabelFilters();
+        
+        next();
+        E("saveStatusMessage").innerHTML = '<span style="color:var(--green);">Sauvegardé avec succès !</span>';
+      } catch (e) {
+        E("saveStatusMessage").innerHTML = '<span style="color:var(--red);">Erreur sauvegarde : ' + esc(e.message) + '</span>';
+      }
+    }
+
+    window.loadSavedAnnotation = function(annotationId) {
+      const a = S.annotations.find(x => String(x.annotation_id) === String(annotationId));
+      if (!a) return;
+      
+      S.editingAnnotationId = String(a.annotation_id);
+      S.start = Number(a.start_sec);
+      S.end = Number(a.end_sec);
+      
+      E("labelSelect").value = a.label;
+      E("customLabelInput").value = "";
+      
+      E("commentInput").value = a.comment ?? "";
+      E("confidenceSelect").value = String(a.confidence ?? 4);
+      
+      S.clickTarget = "end";
+      E("clickModeStartBtn").classList.remove("active");
+      E("clickModeEndBtn").classList.add("active");
+      
+      ensureSegment();
+      updateControls();
+      render();
+    };
+
+    window.deleteAnnotation = async function(annotationId) {
+      if (!confirm("Voulez-vous supprimer cette annotation ?")) return;
+      try {
+        await api("/api/annotations/segments/" + encodeURIComponent(annotationId), { method: "DELETE" });
+        await loadAnnotations();
+        await loadModelPredictions();
+        await loadCategories();
+        renderGpsLabelFilters();
+        renderAnnotationsTable();
+        renderPlots();
+      } catch (e) {
+        alert("Erreur de suppression : " + e.message);
+      }
+    };
+
+    function renderAnnotationsTable() {
+      const tbody = E("annotationsTableBody");
+      tbody.innerHTML = "";
+      
+      if (!S.annotations.length) {
+        tbody.innerHTML = '<tr><td colspan="8" style="text-align:center; color:var(--muted);">Aucune annotation pour ce fichier.</td></tr>';
+        return;
+      }
+      
+      S.annotations.forEach(r => {
+        const row = document.createElement("tr");
+        if (S.editingAnnotationId === r.annotation_id) {
+          row.className = "editing";
+        }
+        row.innerHTML = `
+          <td><span style="font-weight:600; color: ${getClassColor(r.label)}">${esc(r.label)}</span></td>
+          <td>${fmt(r.start_sec)}s</td>
+          <td>${fmt(r.end_sec)}s</td>
+          <td>${fmt(r.duration_sec, 1)}s</td>
+          <td>${fmt(r.vx_median_kmh, 1)} km/h</td>
+          <td>${r.confidence}</td>
+          <td style="color:var(--muted); max-width:200px; text-overflow:ellipsis; overflow:hidden; white-space:nowrap;">${esc(r.comment)}</td>
+          <td style="text-align:right;">
+            <button class="secondary inline" style="width:auto; padding:2px 8px; font-size:11px; margin-right:4px;" onclick="loadSavedAnnotation('${String(r.annotation_id).replace(/'/g, "\\'")}')">Edit</button>
+            <button class="danger inline" style="width:auto; padding:2px 8px; font-size:11px;" onclick="deleteAnnotation('${String(r.annotation_id).replace(/'/g, "\\'")}')">Suppr</button>
+          </td>
+        `;
+        tbody.appendChild(row);
+      });
+    }
+
+    // Plotting functions
+    function gpsXY(lat, lon) {
+      if (!lat || !lon) return null;
+      const valid = lat.map((la, i) => Number.isFinite(la) && Number.isFinite(lon[i]) && Math.abs(la) <= 90 && Math.abs(lon[i]) <= 180 && !(Math.abs(la) < 1e-8 && Math.abs(lon[i]) < 1e-8));
+      const first = valid.findIndex(Boolean);
+      if (first < 0) return null;
+      const R = 6371000, lat0 = lat[first] * Math.PI / 180, lon0 = lon[first] * Math.PI / 180, x = [], y = [];
+      for (let i = 0; i < lat.length; i++) {
+        if (valid[i]) {
+          x[i] = R * Math.cos(lat0) * (lon[i] * Math.PI / 180 - lon0);
+          y[i] = R * (lat[i] * Math.PI / 180 - lat0);
+        } else {
+          x[i] = NaN;
+          y[i] = NaN;
+        }
+      }
+      return { x, y };
+    }
+
+    function buildPlotLayout(title, height) {
+      return {
+        title: {
+          text: title,
+          font: { color: "#e2e8f0", size: 14, family: "Plus Jakarta Sans, sans-serif" }
+        },
+        paper_bgcolor: "rgba(19, 27, 46, 0.4)",
+        plot_bgcolor: "rgba(9, 13, 22, 0.5)",
+        font: { color: "#cbd5e1", family: "Plus Jakarta Sans, sans-serif" },
+        height: height,
+        margin: { l: 45, r: 15, t: 40, b: 35 },
+        xaxis: {
+          gridcolor: "rgba(255,255,255,0.06)",
+          zerolinecolor: "rgba(255,255,255,0.1)",
+          tickfont: { color: "#94a3b8" }
+        },
+        yaxis: {
+          gridcolor: "rgba(255,255,255,0.06)",
+          zerolinecolor: "rgba(255,255,255,0.1)",
+          tickfont: { color: "#94a3b8" }
+        },
+        legend: {
+          orientation: "h",
+          x: 0,
+          y: -0.15,
+          font: { color: "#94a3b8" }
+        },
+        shapes: [
+          {
+            type: "rect",
+            xref: "x",
+            yref: "paper",
+            x0: S.start,
+            x1: S.end,
+            y0: 0,
+            y1: 1,
+            fillcolor: "rgba(239, 68, 68, 0.08)",
+            line: { width: 0 },
+            layer: "below"
+          },
+          {
+            type: "line",
+            xref: "x",
+            yref: "paper",
+            x0: S.start,
+            x1: S.start,
+            y0: 0,
+            y1: 1,
+            line: { color: "#10b981", width: 2, dash: "dash" }
+          },
+          {
+            type: "line",
+            xref: "x",
+            yref: "paper",
+            x0: S.end,
+            x1: S.end,
+            y0: 0,
+            y1: 1,
+            line: { color: "#ef4444", width: 2, dash: "dash" }
+          }
+        ]
+      };
+    }
+
+    function renderPlots() {
+      const d = S.data;
+      const tr = [];
+      
+      if (d.signals.vx) {
+        const y = d.signals.vx.map(v => Number.isFinite(v) ? v * 3.6 : NaN);
+        tr.push({ x: d.time, y, type: "scatter", mode: "lines", name: "vx km/h", line: { color: "#3b82f6", width: 2 } });
+        
+        const step = Math.max(1, Math.floor(d.time.length / 1000));
+        tr.push({
+          x: d.time.filter((_, i) => i % step === 0),
+          y: y.filter((_, i) => i % step === 0),
+          type: "scatter",
+          mode: "markers",
+          name: "Guide clic",
+          marker: { size: 5, color: "#2563eb", opacity: 0.1 },
+          showlegend: false
+        });
+      }
+      
+      if (d.signals.speed) {
+        tr.push({
+          x: d.time,
+          y: d.signals.speed.map(v => Number.isFinite(v) ? v * 3.6 : NaN),
+          type: "scatter",
+          mode: "lines",
+          name: "speed km/h",
+          line: { color: "#60a5fa", dash: "dash", width: 1.5 }
+        });
+      }
+      
+      Plotly.react("vxPlot", tr, buildPlotLayout("Vitesse véhicule vx(t)", 350), { responsive: true, displaylogo: false }).then(() => {
+        const p = E("vxPlot");
+        p.removeAllListeners?.("plotly_click");
+        p.on("plotly_click", ev => {
+          const x = Number(ev.points?.[0]?.x);
+          if (Number.isFinite(x)) {
+            if (S.clickTarget === "start") setStart(x);
+            else setEnd(x);
+          }
+        });
+      });
+
+      // Ax/ay/yaw plot
+      const dyn = [];
+      if (d.signals.ax) dyn.push({ x: d.time, y: d.signals.ax, type: "scatter", mode: "lines", name: "ax (m/s²)", line: { color: "#f59e0b" } });
+      if (d.signals.ay) dyn.push({ x: d.time, y: d.signals.ay, type: "scatter", mode: "lines", name: "ay (m/s²)", line: { color: "#ec4899" } });
+      if (d.signals.yaw) dyn.push({ x: d.time, y: d.signals.yaw, type: "scatter", mode: "lines", name: "yaw_rate (rad/s)", line: { color: "#a855f7" } });
+      
+      Plotly.react("dynPlot", dyn, buildPlotLayout("Accélérations & Vitesse de lacet", 350), { responsive: true, displaylogo: false });
+
+      // GPS Track Plot with filters
+      const g = gpsXY(d.signals.lat, d.signals.lon);
+      const gt = [];
+      if (g) {
+        // 1. Full track (background)
+        if (S.gpsShowFullTrack) {
+          gt.push({
+            x: g.x,
+            y: g.y,
+            type: "scatter",
+            mode: "lines",
+            name: "Trajet complet",
+            opacity: 0.15,
+            line: { color: "#94a3b8", width: 1.5 }
+          });
+        }
+
+        const findRange = (start, end) => {
+          let sIdx = 0;
+          let eIdx = d.time.length - 1;
+          while (sIdx < d.time.length && d.time[sIdx] < start) sIdx++;
+          while (eIdx >= 0 && d.time[eIdx] > end) eIdx--;
+          return { sIdx, eIdx };
+        };
+
+        // 2. Existing Annotations
+        if (S.gpsShowAnnotations) {
+          S.annotations.forEach(ann => {
+            if (S.gpsFilterLabels.length > 0 && !S.gpsFilterLabels.includes(ann.label)) return;
+            const { sIdx, eIdx } = findRange(ann.start_sec, ann.end_sec);
+            if (eIdx > sIdx) {
+              gt.push({
+                x: g.x.slice(sIdx, eIdx + 1),
+                y: g.y.slice(sIdx, eIdx + 1),
+                type: "scatter",
+                mode: "lines",
+                name: `[Ann] ${ann.label}`,
+                line: { color: getClassColor(ann.label), width: 3 }
+              });
+            }
+          });
+        }
+
+        // 3. Model predictions
+        if (S.gpsShowPredictions) {
+          S.suggestions.forEach(pred => {
+            if (S.gpsFilterLabels.length > 0 && !S.gpsFilterLabels.includes(pred.label)) return;
+            const { sIdx, eIdx } = findRange(pred.start_sec, pred.end_sec);
+            if (eIdx > sIdx) {
+              gt.push({
+                x: g.x.slice(sIdx, eIdx + 1),
+                y: g.y.slice(sIdx, eIdx + 1),
+                type: "scatter",
+                mode: "lines",
+                name: `[Pred] ${pred.label}`,
+                line: { color: getClassColor(pred.label), width: 2, dash: "dot" }
+              });
+            }
+          });
+        }
+
+        // 4. Current Segment highlight
+        const mask = d.time.map(t => t >= S.start && t <= S.end);
+        gt.push({
+          x: g.x.filter((_, i) => mask[i]),
+          y: g.y.filter((_, i) => mask[i]),
+          type: "scatter",
+          mode: "lines+markers",
+          name: "Segment courant",
+          line: { color: "#10b981", width: 4 },
+          marker: { size: 6, color: "#10b981" }
+        });
+      }
+      
+      const gl = buildPlotLayout(g ? "Trajectoire GPS (coordonnées relatives en m)" : "Données GPS absentes", 380);
+      if (g) gl.yaxis.scaleanchor = "x";
+      Plotly.react("gpsPlot", gt, gl, { responsive: true, displaylogo: false });
+    }
+
+    // Render global stats & lists
+    function render() {
+      if (!S.data) return;
+      
+      const f = calculateFeatures();
+      E("lblStart").textContent = fmt(S.start, 2, " s");
+      E("lblEnd").textContent = fmt(S.end, 2, " s");
+      E("lblDuration").textContent = fmt(S.end - S.start, 2, " s");
+      E("lblVxMed").textContent = fmt(f.vx_median_kmh, 1, " km/h");
+      E("lblAyRms").textContent = fmt(f.ay_rms, 3);
+      E("lblYawRms").textContent = fmt(f.yaw_rate_rms, 4);
+      
+      renderPlots();
+      renderAnnotationsTable();
+    }
+
+    // Register event listeners
+    E("fileSearchInput").addEventListener("input", renderFileListContainer);
+    E("startInput").addEventListener("change", () => setStart(Number(E("startInput").value)));
+    E("endInput").addEventListener("change", () => setEnd(Number(E("endInput").value)));
+    E("endRangeSlider").addEventListener("input", () => setEnd(Number(E("endRangeSlider").value)));
+    
+    E("clickModeStartBtn").onclick = () => {
+      S.clickTarget = 'start';
+      E("clickModeStartBtn").classList.add("active");
+      E("clickModeEndBtn").classList.remove("active");
+    };
+    
+    E("clickModeEndBtn").onclick = () => {
+      S.clickTarget = 'end';
+      E("clickModeStartBtn").classList.remove("active");
+      E("clickModeEndBtn").classList.add("active");
+    };
+
+    E("stepForwardBtn").onclick = next;
+    E("stepBackBtn").onclick = prev;
+    E("resumeLastEndBtn").onclick = resume;
+    E("saveAnnotationBtn").onclick = saveAnnotation;
+    
+    E("cancelEditBtn").onclick = () => {
+      S.editingAnnotationId = null;
+      E("commentInput").value = "";
+      E("customLabelInput").value = "";
+      updateControls();
+      render();
+      E("saveStatusMessage").innerHTML = '<span style="color:var(--muted);">Édition annulée.</span>';
+    };
+
+    E("trainModelBtn").onclick = trainModel;
+
+    // GPS filtration toggles
+    E("chkGpsShowFullTrack").addEventListener("change", (e) => {
+      S.gpsShowFullTrack = e.target.checked;
+      renderPlots();
+    });
+    E("chkGpsShowAnnotations").addEventListener("change", (e) => {
+      S.gpsShowAnnotations = e.target.checked;
+      renderPlots();
+    });
+    E("chkGpsShowPredictions").addEventListener("change", (e) => {
+      S.gpsShowPredictions = e.target.checked;
+      renderPlots();
+    });
+
+    window.addEventListener("resize", () => {
+      ["vxPlot", "gpsPlot", "dynPlot"].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) Plotly.Plots.resize(el);
+      });
+    });
+
+    document.addEventListener("keydown", async (event) => {
+      if (event.target && ["INPUT", "SELECT", "TEXTAREA"].includes(event.target.tagName)) return;
+      if (event.key === "ArrowLeft") prev();
+      if (event.key === "ArrowRight") next();
+    });
+
+    // Init
+    (async () => {
+      await loadCategories();
+      await loadModelSummary();
+      await loadFilesList();
+    })();
+  </script>
+</body>
+</html>

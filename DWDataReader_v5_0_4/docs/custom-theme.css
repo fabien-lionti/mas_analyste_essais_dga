@@ -1,0 +1,12 @@
+html {
+    --primary-color: #f15d2d;
+    --primary-dark-color: #a33814;
+}
+
+html.dark-mode {
+    --primary-color: #f15d2d;
+    --primary-dark-color: #ed8461;
+    --page-background-color: #232323; 
+    --page-foreground-color: #ffffff;
+    --page-secondary-foreground-color: #404040;
+}
