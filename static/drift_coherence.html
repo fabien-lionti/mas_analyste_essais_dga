@@ -27,9 +27,9 @@
     }
     header {
       height: 58px;
-      display: flex;
+      display: grid;
+      grid-template-columns: 1fr auto 1fr;
       align-items: center;
-      justify-content: space-between;
       gap: 16px;
       padding: 0 20px;
       border-bottom: 1px solid var(--border);
@@ -42,6 +42,28 @@
     h2 { margin: 0 0 10px; font-size: 14px; font-weight: 800; }
     a { color: var(--muted); text-decoration: none; font-size: 13px; }
     a:hover { color: var(--text); }
+    .app-brand { font-weight: 800; white-space: nowrap; }
+    .app-title { color: var(--muted); font-size: 13px; }
+    .app-nav {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      flex-wrap: wrap;
+      grid-column: 2;
+    }
+    .app-nav a {
+      border: 1px solid transparent;
+      border-radius: 8px;
+      padding: 8px 10px;
+      font-weight: 700;
+    }
+    .app-nav a.active,
+    .app-nav a:hover {
+      color: var(--text);
+      border-color: var(--border);
+      background: var(--panel);
+    }
     .layout {
       display: grid;
       grid-template-columns: 330px 1fr;
@@ -162,14 +184,20 @@
       .grid-2, .kpis { grid-template-columns: 1fr; }
     }
   </style>
+  <link rel="stylesheet" href="/static/common_ui.css" />
 </head>
 <body>
   <header>
-    <h1>Exploration signaux par labels</h1>
-    <nav>
-      <a href="/">Dashboard</a>
-      <span style="color:var(--border); margin:0 8px;">|</span>
+    <div>
+      <div class="app-brand">MAS Essais</div>
+      <div class="app-title">Drift · exploration signaux par labels</div>
+    </div>
+    <nav class="app-nav">
+      <a href="/?view=validity">Validité</a>
+      <a href="/?view=explorer">Données d'essais</a>
+      <a href="/?view=rollover">Retournement</a>
       <a href="/annotator">Annotateur</a>
+      <a href="/drift-coherence" class="active">Drift</a>
     </nav>
   </header>
 
@@ -178,10 +206,10 @@
       <section class="card controls">
         <h2>Filtres</h2>
         <div>
-          <label for="labelSourceSelect">Source du label</label>
+          <label for="labelSourceSelect">Source segments</label>
           <select id="labelSourceSelect">
-            <option value="annotated">Annotations validées</option>
-            <option value="cnn_predicted">Prédictions CNN</option>
+            <option value="annotated">Annotations uniquement</option>
+            <option value="cnn_predicted">Prédictions CNN uniquement</option>
             <option value="both">Annotations + CNN</option>
           </select>
         </div>
@@ -241,30 +269,6 @@
         <div id="boxplotTimePlot" class="plot-tall"></div>
       </section>
 
-      <section class="grid-2">
-        <div class="card">
-          <h2>Comparaison par labels</h2>
-          <div id="labelComparePlot" class="plot"></div>
-        </div>
-        <div class="card">
-          <h2>Segments filtrés</h2>
-          <div class="scroll">
-            <table>
-              <thead>
-                <tr>
-                  <th>Fichier</th>
-                  <th>Label</th>
-                  <th>Source</th>
-                  <th>Début</th>
-                  <th>Fin</th>
-                  <th>Confiance</th>
-                </tr>
-              </thead>
-              <tbody id="segmentsTableBody"></tbody>
-            </table>
-          </div>
-        </div>
-      </section>
     </main>
   </div>
 
@@ -279,7 +283,6 @@
       series: [],
       boxplot: [],
       coverage: {},
-      compare: [],
       loadToken: 0
     };
 
@@ -308,6 +311,18 @@
 
     function setStatus(text) {
       E("status").textContent = text;
+    }
+
+    function getUrlParams() {
+      return new URLSearchParams(window.location.search);
+    }
+
+    function normalizeSegmentSourceParam(value) {
+      if (value === "cnn") return "cnn_predicted";
+      if (value === "annotations_cnn") return "both";
+      if (value === "annotations") return "annotated";
+      if (["annotated", "cnn_predicted", "both"].includes(value)) return value;
+      return "";
     }
 
     function plotLayout(title, ytitle = "") {
@@ -349,6 +364,8 @@
 
     function renderStaticOptions() {
       renderFileOptions();
+      const sourceFromUrl = normalizeSegmentSourceParam(getUrlParams().get("segmentSource"));
+      if (sourceFromUrl) E("labelSourceSelect").value = sourceFromUrl;
       E("labelSelect").innerHTML = '<option value="">Tous les labels</option>' + S.labels.map(label => `<option value="${esc(label)}">${esc(label)}</option>`).join("");
       E("signalSelect").innerHTML = S.signals.map(item => {
         const disabled = item.available ? "" : " disabled";
@@ -359,13 +376,15 @@
     }
 
     function renderFileOptions(previousValue = "") {
+      const fileFromUrl = getUrlParams().get("file");
+      const wantedValue = previousValue || fileFromUrl || "";
       E("fileSelect").innerHTML = S.files.map(item => {
         const name = item.json_name || item.file;
         const label = item.date ? `${name} | ${item.date}` : name;
         return `<option value="${esc(name)}">${esc(label)}</option>`;
       }).join("");
-      if (previousValue && S.files.some(item => (item.json_name || item.file) === previousValue)) {
-        E("fileSelect").value = previousValue;
+      if (wantedValue && S.files.some(item => (item.json_name || item.file) === wantedValue)) {
+        E("fileSelect").value = wantedValue;
       } else if (S.files.length) {
         E("fileSelect").value = S.files[0].json_name || S.files[0].file;
       }
@@ -434,21 +453,10 @@
       });
       if (f.label) boxParams.set("label", f.label);
 
-      const compareParams = new URLSearchParams({
-        signal: f.signal,
-        label_source: f.labelSource,
-        json_name: f.jsonName,
-        time_grouping: "day",
-        min_points: "5",
-        max_segments: "1000",
-        max_points: "120000"
-      });
-
-      const [segments, series, boxplot, compare] = await Promise.all([
+      const [segments, series, boxplot] = await Promise.all([
         fetchJSONOrEmpty(`/api/exploration/segments?${segmentParams.toString()}`),
         fetchJSONOrEmpty(`/api/exploration/signals/series?${seriesParams.toString()}`),
-        fetchJSONOrEmpty(`/api/exploration/signals/boxplot?${boxParams.toString()}`),
-        fetchJSONOrEmpty(`/api/exploration/signals/boxplot?${compareParams.toString()}`)
+        fetchJSONOrEmpty(`/api/exploration/signals/boxplot?${boxParams.toString()}`)
       ]);
       if (token !== S.loadToken) return;
 
@@ -457,7 +465,6 @@
       S.series = series.items || [];
       S.boxplot = boxplot.items || [];
       S.coverage = boxplot.coverage || {};
-      S.compare = compare.items || [];
       renderAll();
     }
 
@@ -537,7 +544,7 @@
           hovertemplate: "t=%{x:.2f}s<br>val=%{y:.4g}<extra></extra>"
         });
       }
-      const layout = plotLayout("Signal sur segments filtrés", E("signalSelect").value);
+      const layout = plotLayout("Série temporelle du signal", E("signalSelect").value);
       layout.xaxis.title = "temps (s)";
       layout.shapes = S.segments.slice(0, 120).map(seg => ({
         type: "rect",
@@ -618,54 +625,11 @@
       Plotly.react("boxplotTimePlot", traces, layout, { responsive: true, displaylogo: false });
     }
 
-    function renderLabelComparePlot() {
-      const rows = S.compare;
-      const labels = [...new Set(rows.map(r => r.label).filter(Boolean))].sort();
-      const traces = labels.map(label => {
-        const rs = rows.filter(r => r.label === label);
-        return {
-          type: "box",
-          name: label,
-          x: rs.map(() => label),
-          q1: rs.map(r => r.q25),
-          median: rs.map(r => r.q50),
-          q3: rs.map(r => r.q75),
-          lowerfence: rs.map(r => r.q05),
-          upperfence: rs.map(r => r.q95),
-          boxpoints: false,
-          text: rs.map(r => `${r.n_points} points | ${r.label_source}`),
-          hovertemplate: "%{x}<br>q50=%{median:.4g}<br>%{text}<extra></extra>"
-        };
-      });
-      const layout = plotLayout("Distribution du signal par label", E("signalSelect").value);
-      layout.xaxis.title = "label";
-      Plotly.react("labelComparePlot", traces, layout, { responsive: true, displaylogo: false });
-    }
-
-    function renderSegmentsTable() {
-      if (!S.segments.length) {
-        E("segmentsTableBody").innerHTML = '<tr><td colspan="6" style="color:var(--muted);">Aucun segment pour ces filtres.</td></tr>';
-        return;
-      }
-      E("segmentsTableBody").innerHTML = S.segments.slice(0, 500).map(seg => `
-        <tr>
-          <td title="${esc(seg.json_name)}">${esc(seg.json_name || "-")}</td>
-          <td>${esc(seg.label || "-")}</td>
-          <td>${esc(seg.label_source || "-")}</td>
-          <td>${fmt(seg.start_sec, 1)}s</td>
-          <td>${fmt(seg.end_sec, 1)}s</td>
-          <td>${fmt(seg.confidence, 2)}</td>
-        </tr>
-      `).join("");
-    }
-
     function renderAll() {
       renderCoverage();
       renderTrajectoryPlot();
       renderSignalPlot();
       renderTimeBoxplot();
-      renderLabelComparePlot();
-      renderSegmentsTable();
       const f = currentFilters();
       setStatus([
         `Label: ${f.label || "Tous"}`,

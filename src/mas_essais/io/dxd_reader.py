@@ -8,7 +8,9 @@ from typing import Iterator
 import numpy as np
 import pandas as pd
 
-BASE_DIR = Path(__file__).resolve().parent
+from mas_essais.paths import PROJECT_ROOT
+
+BASE_DIR = PROJECT_ROOT
 SDK_PYTHON_DIR = BASE_DIR / "DWDataReader_v5_0_4" / "examples" / "Python"
 
 if str(SDK_PYTHON_DIR) not in sys.path:

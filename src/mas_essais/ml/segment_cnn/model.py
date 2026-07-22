@@ -9,10 +9,11 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 import numpy as np
 import pandas as pd
 
-from dxd_schema import get_resampled_channels, get_time_values
+from mas_essais.domain.dxd_schema import get_resampled_channels, get_time_values
+from mas_essais.paths import PROJECT_ROOT
 
 
-BASE_DIR = Path(__file__).resolve().parent
+BASE_DIR = PROJECT_ROOT
 RAW_JSON_DIR = BASE_DIR / "selected_dxd_json_resampled"
 ANNOTATION_CSV = BASE_DIR / "manual_segment_annotations" / "segments_annotations.csv"
 MODEL_DIR = BASE_DIR / "manual_segment_annotations" / "segment_cnn"
@@ -745,7 +746,7 @@ def load_model_summary() -> dict[str, Any]:
     if not MODEL_SUMMARY_PATH.exists():
         return {
             "status": "missing",
-            "message": "Run train_segment_cnn.py to build the baseline 1D-CNN.",
+            "message": "Run scripts/train_segment_cnn.py to build the baseline 1D-CNN.",
             "model_path": str(MODEL_WEIGHTS_PATH),
             "summary_path": str(MODEL_SUMMARY_PATH),
             "progress_path": str(MODEL_PROGRESS_PATH),
@@ -1099,7 +1100,7 @@ ACTIVE_LEARNING_CACHE_PATH = BASE_DIR / "manual_segment_annotations" / "active_l
 
 def generate_active_learning_cache(metadata: dict[str, Any]) -> None:
     try:
-        from segment_cnn_model import Simple1DCNN, predict_file
+        from mas_essais.ml.segment_cnn.model import Simple1DCNN, predict_file
         model, meta = Simple1DCNN.load(MODEL_WEIGHTS_PATH, MODEL_METADATA_PATH)
         
         json_names = sorted(p.name for p in RAW_JSON_DIR.glob("*.json"))

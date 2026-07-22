@@ -25,17 +25,77 @@
       color: var(--text);
     }
 
+    .app-header {
+      height: 58px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 0 18px;
+      background: var(--panel);
+      border-bottom: 1px solid var(--border);
+      position: sticky;
+      top: 0;
+      z-index: 20;
+    }
+
+    .app-brand {
+      font-weight: 800;
+      white-space: nowrap;
+    }
+
+    .app-nav {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+
+    .app-nav a {
+      color: var(--muted);
+      text-decoration: none;
+      border: 1px solid transparent;
+      border-radius: 8px;
+      padding: 8px 10px;
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    .app-nav a:hover,
+    .app-nav a.active {
+      color: var(--text);
+      border-color: var(--border);
+      background: var(--panel-2);
+    }
+
+    .app-health {
+      color: var(--muted);
+      font-size: 12px;
+      text-align: right;
+      white-space: nowrap;
+    }
+
     .container {
       display: grid;
       grid-template-columns: 360px 1fr;
-      min-height: 100vh;
+      min-height: calc(100vh - 58px);
     }
 
     body.catalogue-mode .container {
       grid-template-columns: 1fr;
     }
 
-    body.catalogue-mode .sidebar {
+    body.catalogue-mode .sidebar,
+    body.validity-mode .sidebar {
+      display: none;
+    }
+
+    body.validity-mode .container {
+      grid-template-columns: 1fr;
+    }
+
+    body.rollover-mode .channel-controls,
+    body.rollover-mode .point-controls {
       display: none;
     }
 
@@ -75,7 +135,8 @@
     select,
     button,
     input[type="number"],
-    input[type="text"] {
+    input[type="text"],
+    textarea {
       width: 100%;
       padding: 10px 12px;
       margin-bottom: 10px;
@@ -85,6 +146,13 @@
       color: var(--text);
       outline: none;
       font-size: 14px;
+    }
+
+    textarea {
+      min-height: 110px;
+      resize: vertical;
+      font-family: Arial, sans-serif;
+      line-height: 1.4;
     }
 
     select[multiple] {
@@ -114,6 +182,24 @@
     button:disabled {
       opacity: 0.5;
       cursor: not-allowed;
+    }
+
+    button.secondary {
+      background: var(--panel-2);
+      border-color: var(--border);
+      color: var(--text);
+    }
+
+    button.danger {
+      background: #8e2d2d;
+      border-color: #b54747;
+    }
+
+    button.compact {
+      width: auto;
+      padding: 7px 9px;
+      margin: 0;
+      font-size: 12px;
     }
 
     .button-row {
@@ -323,6 +409,37 @@
       background: rgba(255, 80, 80, 0.16);
     }
 
+    .analysis-correction-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      margin-top: 12px;
+    }
+
+    .analysis-correction-pane {
+      min-width: 0;
+    }
+
+    .analysis-correction-pane textarea {
+      min-height: 240px;
+      margin-bottom: 8px;
+      white-space: pre-wrap;
+    }
+
+    .analysis-correction-actions {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      align-items: end;
+    }
+
+    @media (max-width: 900px) {
+      .analysis-correction-grid,
+      .analysis-correction-actions {
+        grid-template-columns: 1fr;
+      }
+    }
+
     .badge-ok,
     .badge-bad,
     .badge-warn {
@@ -356,17 +473,124 @@
       color: #ffb4b0;
     }
 
+    .action-link {
+      display: inline-block;
+      color: var(--accent);
+      text-decoration: none;
+      margin-right: 8px;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+
+    .segment-legend {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      color: var(--muted);
+      font-size: 12px;
+      margin-top: 6px;
+    }
+
+    .legend-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .legend-swatch {
+      width: 18px;
+      height: 8px;
+      border-radius: 4px;
+      display: inline-block;
+    }
+
+    .analysis-markdown {
+      color: var(--text);
+      font-size: 14px;
+      line-height: 1.55;
+    }
+
+    .analysis-markdown h1,
+    .analysis-markdown h2,
+    .analysis-markdown h3 {
+      margin: 16px 0 8px;
+    }
+
+    .analysis-markdown p {
+      margin: 8px 0;
+    }
+
+    .analysis-markdown ul,
+    .analysis-markdown ol {
+      margin: 8px 0 8px 22px;
+      padding: 0;
+    }
+
+    .analysis-markdown li {
+      margin: 4px 0;
+    }
+
+    .analysis-markdown code {
+      background: var(--panel-2);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 1px 4px;
+    }
+
+    .analysis-markdown pre {
+      background: var(--panel-2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px;
+      overflow: auto;
+    }
+
+    .analysis-markdown pre code {
+      border: 0;
+      padding: 0;
+    }
+
   </style>
+  <link rel="stylesheet" href="/static/common_ui.css" />
 </head>
 <body class="catalogue-mode">
+<header class="app-header">
+  <div class="app-brand">MAS Essais</div>
+  <nav class="app-nav">
+    <a href="/?view=validity" id="navValidity">Validité</a>
+    <a href="/?view=explorer" id="navExplorer" class="active">Données d'essais</a>
+    <a href="/?view=rollover" id="navRollover">Retournement</a>
+    <a href="/annotator" id="navAnnotator">Annotateur</a>
+    <a href="/drift-coherence" id="navDrift">Drift</a>
+  </nav>
+  <div class="app-health" id="appHealth">Initialisation...</div>
+</header>
 <div class="container">
   <div class="sidebar">
-    <h2>Contrôles</h2>
     <div class="hint">Catalogue, détail fichier et exploration par labels.</div>
 
-    <div class="button-row">
-      <button onclick="location.href='/annotator'">Annotateur</button>
-      <button onclick="location.href='/drift-coherence'">Exploration labels</button>
+    <label for="segmentSourceSelect">Filtrer par segments</label>
+    <select id="segmentSourceSelect">
+      <option value="none" selected>Aucun filtre segment</option>
+      <option value="annotations">Annotations uniquement</option>
+      <option value="cnn">Prédictions CNN uniquement</option>
+      <option value="annotations_cnn">Annotations + prédictions CNN</option>
+    </select>
+    <label for="segmentLabelSelect">Label</label>
+    <select id="segmentLabelSelect">
+      <option value="">Tous les labels</option>
+    </select>
+    <label for="segmentModelSelect">Modèle</label>
+    <select id="segmentModelSelect">
+      <option value="segment_cnn">CNN actif</option>
+    </select>
+    <label class="checkbox-row" for="showSegmentOverlays">
+      <input type="checkbox" id="showSegmentOverlays" checked>
+      Afficher les plages sur les graphes
+    </label>
+    <div class="segment-legend">
+      <span class="legend-chip"><span class="legend-swatch" style="background:rgba(34,197,94,0.30);"></span>Annotations</span>
+      <span class="legend-chip"><span class="legend-swatch" style="background:rgba(245,158,11,0.30);"></span>CNN</span>
     </div>
 
     <div class="button-row">
@@ -377,25 +601,16 @@
     <label for="fileSelect">Fichier</label>
     <select id="fileSelect"></select>
 
-    <label for="channelSelect">Canaux rééchantillonnés</label>
-    <select id="channelSelect" multiple size="10"></select>
-    <div class="subtle">Maximum 2 canaux affichés.</div>
+    <div class="channel-controls">
+      <label for="channelSelect">Canaux rééchantillonnés</label>
+      <select id="channelSelect" multiple size="10"></select>
+      <div class="subtle">Maximum 2 canaux affichés.</div>
+    </div>
 
-    <label for="featureSelect">Features glissantes</label>
-    <select id="featureSelect" multiple size="10"></select>
-    <div class="subtle">Format : Canal::feature</div>
-
-    <label for="driftChannelSelect">Canal pour drift</label>
-    <select id="driftChannelSelect"></select>
-
-    <label for="driftFeatureSelect">Feature globale pour drift</label>
-    <select id="driftFeatureSelect"></select>
-
-    <label for="maxPoints">Nb max de points signal / trajectoire</label>
-    <input id="maxPoints" type="number" value="8000" min="100" max="50000" step="100">
-
-    <label for="maxFeaturePoints">Nb max de points feature</label>
-    <input id="maxFeaturePoints" type="number" value="5000" min="50" max="50000" step="50">
+    <div class="point-controls">
+      <label for="maxPoints">Nb max de points signal / trajectoire</label>
+      <input id="maxPoints" type="number" value="8000" min="100" max="50000" step="100">
+    </div>
 
     <label class="checkbox-row" for="multiAxisMode">
       <input type="checkbox" id="multiAxisMode" checked>
@@ -408,11 +623,42 @@
   </div>
 
   <div class="main">
-    <h1>Explorateur DXD</h1>
+    <div id="tab-validity" class="tab-panel">
+      <div class="card">
+        <h3>Validité des fichiers</h3>
+        <div class="subtle">
+          Synthèse des fichiers, exports, annotations et prédictions disponibles. Les actions ouvrent les vues existantes avec le fichier sélectionné.
+        </div>
+        <div class="overview-grid" style="margin-top:12px;">
+          <div class="kpi"><div class="kpi-label">Fichiers JSON</div><div class="kpi-value" id="validityJsonCount">-</div></div>
+          <div class="kpi"><div class="kpi-label">Fichiers OK</div><div class="kpi-value" id="validityOkCount">-</div></div>
+          <div class="kpi"><div class="kpi-label">Fichiers en problème</div><div class="kpi-value" id="validityProblemCount">-</div></div>
+          <div class="kpi"><div class="kpi-label">Annotations</div><div class="kpi-value" id="validityAnnotationCount">-</div></div>
+          <div class="kpi"><div class="kpi-label">Modèle CNN</div><div class="kpi-value" id="validityCnnStatus">-</div></div>
+          <div class="kpi"><div class="kpi-label">Runs drift</div><div class="kpi-value" id="validityDriftRuns">-</div></div>
+        </div>
+      </div>
 
-    <div class="tabs">
-      <button class="tab-btn active" data-tab="tab-catalogue">Catalogue</button>
-      <button class="tab-btn" data-tab="tab-detail">Détail fichier</button>
+      <div class="card">
+        <h3>Table de synthèse</h3>
+        <div class="table-wrap">
+          <table class="catalog-table" id="validityTable">
+            <thead>
+              <tr>
+                <th>Fichier</th>
+                <th>Date</th>
+                <th>Open</th>
+                <th>Resampled</th>
+                <th>Features</th>
+                <th>Missing</th>
+                <th>Annotations</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="validityTableBody"></tbody>
+          </table>
+        </div>
+      </div>
     </div>
 
     <div id="tab-catalogue" class="tab-panel active">
@@ -493,13 +739,115 @@
       </div>
 
       <div class="plot-card">
-        <h3>Features glissantes</h3>
-        <div id="plotFeat" style="height: 320px;"></div>
+        <h3>Trajectoire GPS</h3>
+        <div id="plotTrajectory" style="height: 420px;"></div>
+      </div>
+    </div>
+
+    <div id="tab-rollover" class="tab-panel">
+      <div class="card">
+        <h3>Seuils d'encodage</h3>
+        <div class="overview-grid">
+          <div>
+            <label for="ltrWarningThreshold">Surveillance</label>
+            <input id="ltrWarningThreshold" type="number" value="0.60" min="0" max="1" step="0.01">
+          </div>
+          <div>
+            <label for="ltrHighThreshold">Élevé</label>
+            <input id="ltrHighThreshold" type="number" value="0.80" min="0" max="1" step="0.01">
+          </div>
+          <div>
+            <label for="ltrCriticalThreshold">Critique</label>
+            <input id="ltrCriticalThreshold" type="number" value="0.90" min="0.01" max="1.5" step="0.01">
+          </div>
+        </div>
+        <label for="rolloverProviderSelect">Provider IA</label>
+        <select id="rolloverProviderSelect">
+          <option value="groq" selected>Groq / Qwen</option>
+          <option value="gemini">Gemini 3 Flash Preview</option>
+        </select>
+        <div class="button-row">
+          <button id="analyzeRolloverBtn" type="button">Analyser le segment</button>
+        </div>
+        <div id="rolloverAnalysisStatus" class="status"></div>
+        <div id="rolloverAnalysisResult" class="analysis-markdown"></div>
+      </div>
+
+      <div class="card">
+        <h3>Historique des analyses</h3>
+        <div class="subtle">Les versions manuelles sont sauvegardées comme de nouvelles lignes et gardent un lien vers l'analyse source.</div>
+        <div class="table-wrap" style="margin-top:12px;">
+          <table class="catalog-table">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Date</th>
+                <th>Provider</th>
+                <th>Segment source</th>
+                <th>Version</th>
+                <th>Confiance</th>
+                <th>Synthèse</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="rolloverAnalysisHistoryBody"></tbody>
+          </table>
+        </div>
+        <div class="analysis-correction-grid">
+          <div class="analysis-correction-pane">
+            <label for="rolloverAnalysisSourceText">Analyse sélectionnée</label>
+            <textarea id="rolloverAnalysisSourceText" readonly placeholder="Clique sur une analyse dans l'historique."></textarea>
+          </div>
+          <div class="analysis-correction-pane">
+            <label for="rolloverAnalysisCorrectionText">Correction / annotation humaine</label>
+            <textarea id="rolloverAnalysisCorrectionText" placeholder="Réécris ici le contenu corrigé de l'analyse."></textarea>
+            <div class="analysis-correction-actions">
+              <div>
+                <label for="rolloverCorrectionConfidence">Confiance corrigée</label>
+                <select id="rolloverCorrectionConfidence">
+                  <option value="haute">haute</option>
+                  <option value="moyenne" selected>moyenne</option>
+                  <option value="basse">basse</option>
+                </select>
+              </div>
+              <div>
+                <label for="rolloverCorrectionNote">Note de version</label>
+                <input id="rolloverCorrectionNote" type="text" value="Correction humaine de l'analyse LLM">
+              </div>
+            </div>
+            <button id="saveRolloverCorrectionBtn" type="button" disabled>Sauvegarder la correction</button>
+          </div>
+        </div>
       </div>
 
       <div class="plot-card">
-        <h3>Trajectoire GPS</h3>
-        <div id="plotTrajectory" style="height: 420px;"></div>
+        <h3>LTR calculé depuis les charges verticales roues</h3>
+        <div id="plotRolloverLTR" style="height: 460px;"></div>
+      </div>
+
+      <div class="plot-card">
+        <h3>vx</h3>
+        <div id="plotRolloverVx" style="height: 260px;"></div>
+      </div>
+
+      <div class="plot-card">
+        <h3>vy</h3>
+        <div id="plotRolloverVy" style="height: 260px;"></div>
+      </div>
+
+      <div class="plot-card">
+        <h3>ax</h3>
+        <div id="plotRolloverAx" style="height: 260px;"></div>
+      </div>
+
+      <div class="plot-card">
+        <h3>ay</h3>
+        <div id="plotRolloverAy" style="height: 260px;"></div>
+      </div>
+
+      <div class="plot-card">
+        <h3>roll angle</h3>
+        <div id="plotRolloverRollAngle" style="height: 260px;"></div>
       </div>
     </div>
 
@@ -508,10 +856,18 @@
 
 <script>
   let currentFiles = [];
+  let allFiles = [];
   let cachedFileSummary = null;
   let cachedChannelsPayload = null;
   let cachedGlobalFeatures = null;
-  let cachedSlidingColumns = [];
+  let cachedSegmentOverlays = [];
+  let cachedSegmentLabels = [];
+  let cachedAnnotationRows = [];
+  let cachedCnnSummary = null;
+  let cachedDriftRuns = null;
+  let cachedRolloverPayload = null;
+  let cachedRolloverAnalyses = [];
+  let selectedRolloverAnalysisId = null;
   let syncState = { xMin: null, xMax: null };
   let isSyncing = false;
 
@@ -526,6 +882,45 @@
       throw new Error(text || `HTTP ${res.status}`);
     }
     return await res.json();
+  }
+
+  async function fetchJSONOrNull(url) {
+    try {
+      return await fetchJSON(url);
+    } catch (err) {
+      console.warn("Optional fetch failed:", url, err);
+      return null;
+    }
+  }
+
+  function getUrlParams() {
+    return new URLSearchParams(window.location.search);
+  }
+
+  function setActiveNav(view) {
+    document.getElementById("navValidity").classList.toggle("active", view === "validity");
+    document.getElementById("navExplorer").classList.toggle("active", view === "explorer");
+    document.getElementById("navRollover").classList.toggle("active", view === "rollover");
+  }
+
+  function buildViewUrl(path, params = {}) {
+    const search = new URLSearchParams();
+    Object.entries(params).forEach(([key, value]) => {
+      if (value !== null && value !== undefined && value !== "") search.set(key, value);
+    });
+    const query = search.toString();
+    return query ? `${path}?${query}` : path;
+  }
+
+  function goToAnnotator() {
+    location.href = buildViewUrl("/annotator", { file: getCurrentJsonName() });
+  }
+
+  function goToDrift() {
+    location.href = buildViewUrl("/drift-coherence", {
+      file: getCurrentJsonName(),
+      segmentSource: document.getElementById("segmentSourceSelect").value
+    });
   }
 
   function getSelectedValues(selectEl) {
@@ -551,6 +946,14 @@
     const idx = getCurrentFileIndex();
     if (idx < 0 || idx >= currentFiles.length) return null;
     return currentFiles[idx];
+  }
+
+  function getLabelSourceForFiles() {
+    const mode = document.getElementById("segmentSourceSelect").value;
+    if (mode === "annotations") return "annotated";
+    if (mode === "cnn") return "cnn_predicted";
+    if (mode === "annotations_cnn") return "both";
+    return "annotated";
   }
 
   function getSelectedChannels() {
@@ -584,29 +987,6 @@
     setStatus("Maximum 2 canaux affichables en même temps.");
   }
 
-  function filterFeatureColumnsByChannels(allFeatureCols, selectedChannels) {
-    if (!selectedChannels || selectedChannels.length === 0) return allFeatureCols;
-    return allFeatureCols.filter((feat) => selectedChannels.some((ch) => feat.startsWith(`${ch}::`)));
-  }
-
-  function buildDefaultFeatureSelection(filteredCols, selectedChannels) {
-    const preferredSuffixes = ["::mean", "::std", "::rms", "::min", "::max"];
-    const matched = [];
-
-    for (const ch of selectedChannels) {
-      for (const suffix of preferredSuffixes) {
-        const wanted = `${ch}${suffix}`;
-        if (filteredCols.includes(wanted) && !matched.includes(wanted)) {
-          matched.push(wanted);
-          break;
-        }
-      }
-    }
-
-    if (matched.length > 0) return matched;
-    return filteredCols.slice(0, 2);
-  }
-
   function buildYAxisName(i) {
     return i === 0 ? "y" : `y${i + 1}`;
   }
@@ -616,6 +996,89 @@
       layout.xaxis.range = [syncState.xMin, syncState.xMax];
     }
     return layout;
+  }
+
+  function getOverlayColor(source) {
+    return source === "annotation" ? "rgba(34,197,94,0.18)" : "rgba(245,158,11,0.18)";
+  }
+
+  function getOverlayLineColor(source) {
+    return source === "annotation" ? "rgba(34,197,94,0.60)" : "rgba(245,158,11,0.60)";
+  }
+
+  function buildSegmentOverlayShapes() {
+    if (!document.getElementById("showSegmentOverlays").checked) return [];
+    const sourceMode = document.getElementById("segmentSourceSelect").value;
+    if (sourceMode === "none") return [];
+    return cachedSegmentOverlays
+      .filter(seg => Number.isFinite(Number(seg.start_s)) && Number.isFinite(Number(seg.end_s)))
+      .slice(0, 160)
+      .map(seg => ({
+        type: "rect",
+        xref: "x",
+        yref: "paper",
+        x0: Number(seg.start_s),
+        x1: Number(seg.end_s),
+        y0: 0,
+        y1: 1,
+        fillcolor: getOverlayColor(seg.source),
+        line: { color: getOverlayLineColor(seg.source), width: 1 },
+        layer: "below"
+      }));
+  }
+
+  function normalizeAnnotation(row) {
+    return {
+      source: "annotation",
+      annotation_id: row.annotation_id || row.id || "",
+      file: row.json_name || row.file || "",
+      start_s: Number(row.start_sec ?? row.start_s ?? row.start),
+      end_s: Number(row.end_sec ?? row.end_s ?? row.end),
+      label: row.label || "",
+      confidence: row.confidence ?? null,
+      status: "manual"
+    };
+  }
+
+  function normalizePrediction(row) {
+    return {
+      source: "cnn",
+      annotation_id: row.annotation_id || row.segment_id || row.id || "",
+      file: row.json_name || row.file || "",
+      start_s: Number(row.start_sec ?? row.start_s ?? row.start),
+      end_s: Number(row.end_sec ?? row.end_s ?? row.end),
+      label: row.label || row.predicted_label || "",
+      confidence: row.confidence ?? row.probability ?? row.score ?? null,
+      status: "predicted"
+    };
+  }
+
+  async function loadSegmentOverlays() {
+    const jsonName = getCurrentJsonName();
+    const mode = document.getElementById("segmentSourceSelect").value;
+    const selectedLabel = document.getElementById("segmentLabelSelect").value;
+    cachedSegmentOverlays = [];
+    if (!jsonName || mode === "none") return;
+
+    const loads = [];
+    if (mode === "annotations" || mode === "annotations_cnn") {
+      loads.push(
+        fetchJSONOrNull(`/api/annotations/segments?json_name=${encodeURIComponent(jsonName)}`)
+          .then(data => (data?.items || []).map(normalizeAnnotation))
+      );
+    }
+    if (mode === "cnn" || mode === "annotations_cnn") {
+      loads.push(
+        fetchJSONOrNull(`/api/segment-model/file/${encodeURIComponent(jsonName)}?stride_sec=2.0&smooth_radius=2`)
+          .then(data => (data?.suggestions || []).map(normalizePrediction))
+      );
+    }
+
+    const chunks = await Promise.all(loads);
+    cachedSegmentOverlays = chunks
+      .flat()
+      .filter(seg => Number.isFinite(seg.start_s) && Number.isFinite(seg.end_s))
+      .filter(seg => !selectedLabel || seg.label === selectedLabel);
   }
 
   function buildRawLayoutMultiAxis(channels, title) {
@@ -661,20 +1124,6 @@
     });
   }
 
-  function buildFeatureLayout(title) {
-    return applySharedXRange({
-      title: { text: title, font: { color: "#e6edf3" } },
-      paper_bgcolor: "#171b22",
-      plot_bgcolor: "#171b22",
-      font: { color: "#e6edf3" },
-      xaxis: { title: "time (s)", gridcolor: "#2c3444", zerolinecolor: "#2c3444" },
-      yaxis: { title: "feature value", gridcolor: "#2c3444", zerolinecolor: "#2c3444" },
-      hovermode: "x unified",
-      margin: { t: 50, l: 70, r: 40, b: 50 },
-      legend: { orientation: "h", yanchor: "bottom", y: 1.02, xanchor: "left", x: 0 }
-    });
-  }
-
   function escapeHtml(value) {
     return String(value ?? "")
       .replaceAll("&", "&amp;")
@@ -701,6 +1150,100 @@
       hovermode: "closest",
       margin: { t: 50, l: 70, r: 40, b: 60 },
       legend: { orientation: "h", yanchor: "bottom", y: 1.02, xanchor: "left", x: 0 }
+    };
+  }
+
+  function buildRolloverLayout(title, thresholds) {
+    const shapes = buildSegmentOverlayShapes();
+    [
+      [thresholds.warning, "rgba(242,204,96,0.70)"],
+      [-thresholds.warning, "rgba(242,204,96,0.70)"],
+      [thresholds.high, "rgba(255,159,67,0.75)"],
+      [-thresholds.high, "rgba(255,159,67,0.75)"],
+      [thresholds.critical, "rgba(255,123,114,0.85)"],
+      [-thresholds.critical, "rgba(255,123,114,0.85)"]
+    ].forEach(([y, color]) => {
+      shapes.push({
+        type: "line",
+        xref: "paper",
+        yref: "y",
+        x0: 0,
+        x1: 1,
+        y0: y,
+        y1: y,
+        line: { color, width: 1, dash: "dot" }
+      });
+    });
+
+    return applySharedXRange({
+      title: { text: title, font: { color: "#e6edf3" } },
+      paper_bgcolor: "#171b22",
+      plot_bgcolor: "#171b22",
+      font: { color: "#e6edf3" },
+      xaxis: { title: "time (s)", gridcolor: "#2c3444", zerolinecolor: "#2c3444" },
+      yaxis: { title: "LTR", gridcolor: "#2c3444", zerolinecolor: "#2c3444", range: [-1.05, 1.05] },
+      hovermode: "x unified",
+      margin: { t: 50, l: 70, r: 40, b: 50 },
+      legend: { orientation: "h", yanchor: "bottom", y: 1.02, xanchor: "left", x: 0 },
+      shapes
+    });
+  }
+
+  function buildRolloverSignalLayout(title, yTitle) {
+    return applySharedXRange({
+      title: { text: title, font: { color: "#e6edf3" } },
+      paper_bgcolor: "#171b22",
+      plot_bgcolor: "#171b22",
+      font: { color: "#e6edf3" },
+      xaxis: { title: "time (s)", gridcolor: "#2c3444", zerolinecolor: "#2c3444" },
+      yaxis: { title: yTitle, gridcolor: "#2c3444", zerolinecolor: "#2c3444" },
+      hovermode: "x unified",
+      margin: { t: 42, l: 70, r: 40, b: 45 },
+      showlegend: false,
+      shapes: buildSegmentOverlayShapes()
+    });
+  }
+
+  function getRolloverSignalDisplay(channel, label) {
+    if (channel === "vehicle.vx") {
+      return {
+        label: "vx",
+        axisTitle: "vx (km/h)",
+        transform: value => Number.isFinite(Number(value)) ? Number(value) * 3.6 : null
+      };
+    }
+    if (channel === "vehicle.vy") {
+      return {
+        label: "vy",
+        axisTitle: "vy (m/s)",
+        transform: value => Number.isFinite(Number(value)) ? Number(value) : null
+      };
+    }
+    if (channel === "vehicle.ax") {
+      return {
+        label: "ax",
+        axisTitle: "ax (m/s²)",
+        transform: value => Number.isFinite(Number(value)) ? Number(value) : null
+      };
+    }
+    if (channel === "vehicle.ay") {
+      return {
+        label: "ay",
+        axisTitle: "ay (m/s²)",
+        transform: value => Number.isFinite(Number(value)) ? Number(value) : null
+      };
+    }
+    if (channel === "vehicle.roll_angle") {
+      return {
+        label: "roll angle",
+        axisTitle: "roll angle (deg)",
+        transform: value => Number.isFinite(Number(value)) ? Number(value) : null
+      };
+    }
+    return {
+      label,
+      axisTitle: channel,
+      transform: value => Number.isFinite(Number(value)) ? Number(value) : null
     };
   }
 
@@ -737,6 +1280,126 @@
     return n.toFixed(digits);
   }
 
+  function fmtDuration(value) {
+    const n = Number(value);
+    if (!Number.isFinite(n)) return "-";
+    if (n < 60) return `${n.toFixed(1)} s`;
+    return `${Math.floor(n / 60)} min ${(n % 60).toFixed(0)} s`;
+  }
+
+  function displayRiskLabel(value) {
+    const labels = {
+      faible: "Faible",
+      surveillance: "Surveillance",
+      eleve: "Élevé",
+      critique: "Critique",
+      indisponible: "Indisponible"
+    };
+    return labels[value] || String(value || "-");
+  }
+
+  function getLtrThresholds() {
+    const warning = Number(document.getElementById("ltrWarningThreshold")?.value || 0.60);
+    const high = Number(document.getElementById("ltrHighThreshold")?.value || 0.80);
+    const critical = Number(document.getElementById("ltrCriticalThreshold")?.value || 0.90);
+    return {
+      warning: Number.isFinite(warning) ? warning : 0.60,
+      high: Number.isFinite(high) ? high : 0.80,
+      critical: Number.isFinite(critical) && critical > 0 ? critical : 0.90
+    };
+  }
+
+  function safeFilename(value) {
+    return String(value || "retournement")
+      .replace(/\.json$/i, "")
+      .replace(/[^a-zA-Z0-9._-]+/g, "_")
+      .slice(0, 120);
+  }
+
+  function splitThinkContent(text) {
+    const raw = String(text || "");
+    const match = raw.match(/<think>([\s\S]*?)<\/think>/i);
+    if (!match) {
+      return { think: "", answer: raw.trim() };
+    }
+    return {
+      think: match[1].trim(),
+      answer: raw.replace(match[0], "").trim()
+    };
+  }
+
+  function renderInlineMarkdown(text) {
+    return escapeHtml(text)
+      .replace(/`([^`]+)`/g, "<code>$1</code>")
+      .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+      .replace(/\*([^*]+)\*/g, "<em>$1</em>");
+  }
+
+  function renderMarkdown(text) {
+    const raw = String(text || "").trim();
+    if (!raw) return "";
+    const blocks = raw.split(/```/);
+    let html = "";
+    blocks.forEach((block, index) => {
+      if (index % 2 === 1) {
+        html += `<pre><code>${escapeHtml(block.trim())}</code></pre>`;
+        return;
+      }
+
+      const lines = block.split(/\r?\n/);
+      let listMode = null;
+      const closeList = () => {
+        if (listMode) {
+          html += `</${listMode}>`;
+          listMode = null;
+        }
+      };
+
+      lines.forEach(line => {
+        const trimmed = line.trim();
+        if (!trimmed) {
+          closeList();
+          return;
+        }
+
+        const heading = trimmed.match(/^(#{1,3})\s+(.+)$/);
+        if (heading) {
+          closeList();
+          const level = heading[1].length;
+          html += `<h${level}>${renderInlineMarkdown(heading[2])}</h${level}>`;
+          return;
+        }
+
+        const bullet = trimmed.match(/^[-*]\s+(.+)$/);
+        if (bullet) {
+          if (listMode !== "ul") {
+            closeList();
+            html += "<ul>";
+            listMode = "ul";
+          }
+          html += `<li>${renderInlineMarkdown(bullet[1])}</li>`;
+          return;
+        }
+
+        const ordered = trimmed.match(/^\d+\.\s+(.+)$/);
+        if (ordered) {
+          if (listMode !== "ol") {
+            closeList();
+            html += "<ol>";
+            listMode = "ol";
+          }
+          html += `<li>${renderInlineMarkdown(ordered[1])}</li>`;
+          return;
+        }
+
+        closeList();
+        html += `<p>${renderInlineMarkdown(trimmed)}</p>`;
+      });
+      closeList();
+    });
+    return html;
+  }
+
   function attachSync(plotId) {
     const plotDiv = document.getElementById(plotId);
 
@@ -768,7 +1431,7 @@
           ? { "xaxis.range": [syncState.xMin, syncState.xMax] }
           : { "xaxis.autorange": true };
 
-        const syncTargets = ["plotRaw", "plotFeat"];
+        const syncTargets = ["plotRaw", "plotRolloverLTR", "plotRolloverVx", "plotRolloverVy", "plotRolloverAx", "plotRolloverAy"];
         for (const otherPlotId of syncTargets) {
           if (otherPlotId === plotId) continue;
           const otherPlot = document.getElementById(otherPlotId);
@@ -793,13 +1456,12 @@
     });
 
     document.body.classList.toggle("catalogue-mode", tabId === "tab-catalogue");
+    document.body.classList.toggle("validity-mode", tabId === "tab-validity");
+    document.body.classList.toggle("rollover-mode", tabId === "tab-rollover");
+    setActiveNav(tabId === "tab-validity" ? "validity" : (tabId === "tab-rollover" ? "rollover" : "explorer"));
 
     window.dispatchEvent(new Event("resize"));
 
-    if (tabId === "tab-drift") {
-      drawDriftPlot().catch(err => setStatus(`Erreur drift:\n${err}`));
-      drawResidualDriftPlot().catch(err => setStatus(`Erreur drift résidus:\n${err}`));
-    }
   }
 
   function setupTabs() {
@@ -908,13 +1570,157 @@
     });
   }
 
+  async function loadValiditySideData() {
+    const [annotations, annotationLabels, cnnSummary, driftRuns] = await Promise.all([
+      fetchJSONOrNull("/api/annotations/segments"),
+      fetchJSONOrNull("/api/annotations/segments/labels"),
+      fetchJSONOrNull("/api/segment-model/summary"),
+      fetchJSONOrNull("/api/drift-coherence/runs")
+    ]);
+    cachedAnnotationRows = annotations?.items || [];
+    const annotationLabelItems = annotationLabels?.items || [];
+    const annotationLabelNames = annotationLabelItems.map(item => item.label).filter(Boolean);
+    const modelLabelNames = cnnSummary?.label_names || [];
+    cachedSegmentLabels = [...new Set([...annotationLabelNames, ...modelLabelNames])].sort();
+    cachedCnnSummary = cnnSummary || null;
+    cachedDriftRuns = driftRuns || null;
+    renderSegmentFilterOptions();
+  }
+
+  function renderSegmentFilterOptions() {
+    const labelSelect = document.getElementById("segmentLabelSelect");
+    const previousLabel = labelSelect.value;
+    labelSelect.innerHTML = '<option value="">Tous les labels</option>';
+    cachedSegmentLabels.forEach(label => {
+      const opt = document.createElement("option");
+      opt.value = label;
+      opt.textContent = label;
+      labelSelect.appendChild(opt);
+    });
+    if (previousLabel && cachedSegmentLabels.includes(previousLabel)) {
+      labelSelect.value = previousLabel;
+    }
+
+    const modelSelect = document.getElementById("segmentModelSelect");
+    const status = cachedCnnSummary?.status || "ok";
+    const nClasses = cachedCnnSummary?.n_classes;
+    const windowSec = cachedCnnSummary?.window_sec;
+    const label = [
+      "CNN actif",
+      nClasses ? `${nClasses} labels` : null,
+      windowSec ? `${windowSec}s` : null,
+      status && status !== "ok" ? status : null
+    ].filter(Boolean).join(" · ");
+    modelSelect.innerHTML = `<option value="segment_cnn">${escapeHtml(label)}</option>`;
+  }
+
+  function countAnnotationsByFile() {
+    const counts = new Map();
+    cachedAnnotationRows.forEach(row => {
+      const name = row.json_name || row.file;
+      if (!name) return;
+      counts.set(name, (counts.get(name) || 0) + 1);
+    });
+    return counts;
+  }
+
+  function renderValidityView() {
+    const annotationCounts = countAnnotationsByFile();
+    const problemCount = currentFiles.filter(fileHasProblem).length;
+    const okCount = currentFiles.length - problemCount;
+    const totalAnnotations = cachedAnnotationRows.length;
+    const cnnStatus = cachedCnnSummary?.status || (cachedCnnSummary ? "?" : "indispo");
+    const driftItems = cachedDriftRuns?.items || cachedDriftRuns?.runs || [];
+
+    document.getElementById("validityJsonCount").textContent = String(currentFiles.length);
+    document.getElementById("validityOkCount").textContent = String(okCount);
+    document.getElementById("validityProblemCount").textContent = String(problemCount);
+    document.getElementById("validityAnnotationCount").textContent = String(totalAnnotations);
+    document.getElementById("validityCnnStatus").textContent = String(cnnStatus);
+    document.getElementById("validityDriftRuns").textContent = String(Array.isArray(driftItems) ? driftItems.length : 0);
+
+    const tbody = document.getElementById("validityTableBody");
+    tbody.innerHTML = "";
+
+    currentFiles.forEach(item => {
+      const tr = document.createElement("tr");
+      if (fileHasProblem(item)) tr.classList.add("problem-row");
+
+      const jsonName = item.json_name || "";
+      const annCount = annotationCounts.get(jsonName) || annotationCounts.get(item.file) || 0;
+      const missingCount = Number(item.target_missing_count || 0);
+      const encoded = encodeURIComponent(jsonName);
+
+      tr.innerHTML = `
+        <td title="${escapeHtml(item.file || jsonName)}">${escapeHtml(item.file || jsonName || "-")}</td>
+        <td>${escapeHtml(item.date || "-")}</td>
+        <td>${boolBadge(item.can_open)}</td>
+        <td>${boolBadge(item.has_resampled_data)}</td>
+        <td>${boolBadge(item.has_features)}</td>
+        <td>${missingCount > 0 ? `<span class="badge-bad">${missingCount}</span>` : `<span class="badge-ok">0</span>`}</td>
+        <td>${annCount > 0 ? `<span class="badge-ok">${annCount}</span>` : `<span class="badge-warn">0</span>`}</td>
+        <td>
+          <a class="action-link" href="/?view=explorer&file=${encoded}">Voir données</a>
+          <a class="action-link" href="/?view=rollover&file=${encoded}">LTR</a>
+          <a class="action-link" href="/annotator?file=${encoded}">Annoter</a>
+          <a class="action-link" href="/drift-coherence?file=${encoded}">Voir drift</a>
+        </td>
+      `;
+      tbody.appendChild(tr);
+    });
+
+    document.getElementById("appHealth").textContent = `${currentFiles.length} fichiers | ${problemCount} problème(s) | ${totalAnnotations} annotation(s)`;
+  }
+
+  function renderFileSelect({ preserveValue = true } = {}) {
+    const select = document.getElementById("fileSelect");
+    const previousValue = preserveValue ? select.value : "";
+    select.innerHTML = "";
+
+    currentFiles.forEach((item) => {
+      const label = item.date ? `${item.file} — ${item.date}` : item.file;
+      const opt = document.createElement("option");
+      opt.value = item.json_name;
+      opt.textContent = label;
+      select.appendChild(opt);
+    });
+
+    const fileFromUrl = getUrlParams().get("file");
+    const wanted = previousValue || fileFromUrl;
+    if (wanted && currentFiles.some(item => item.json_name === wanted)) {
+      select.value = wanted;
+    } else if (select.options.length > 0) {
+      select.selectedIndex = 0;
+    }
+  }
+
+  async function applyFileFilterFromSegments({ preserveValue = true } = {}) {
+    const label = document.getElementById("segmentLabelSelect").value;
+    const sourceMode = document.getElementById("segmentSourceSelect").value;
+
+    if (!label || sourceMode === "none") {
+      currentFiles = allFiles.slice();
+      renderFileSelect({ preserveValue });
+      return;
+    }
+
+    const params = new URLSearchParams({
+      label,
+      label_source: getLabelSourceForFiles(),
+      limit: "5000"
+    });
+    const data = await fetchJSONOrNull(`/api/exploration/files?${params.toString()}`);
+    const allowedNames = new Set((data?.items || []).map(item => item.json_name || item.file).filter(Boolean));
+
+    currentFiles = allFiles.filter(item => allowedNames.has(item.json_name) || allowedNames.has(item.file));
+    renderFileSelect({ preserveValue });
+  }
+
   async function loadFiles() {
     setStatus("Chargement des fichiers…");
     const data = await fetchJSON("/api/files");
-    const select = document.getElementById("fileSelect");
-    select.innerHTML = "";
-
-    currentFiles = data.items || [];
+    allFiles = data.items || [];
+    currentFiles = allFiles.slice();
 
     if (currentFiles.length === 0) {
       setStatus("Aucun fichier JSON trouvé.");
@@ -923,17 +1729,10 @@
       return;
     }
 
-    currentFiles.forEach((item, i) => {
-      const label = item.date ? `${item.file} — ${item.date}` : item.file;
-      const opt = document.createElement("option");
-      opt.value = item.json_name;
-      opt.textContent = label;
-      if (i === 0) opt.selected = true;
-      select.appendChild(opt);
-    });
-
+    await applyFileFilterFromSegments({ preserveValue: false });
     updateNavButtons();
     renderCatalogTable();
+    renderValidityView();
     setStatus(`${currentFiles.length} fichier(s) chargé(s).`);
   }
 
@@ -981,44 +1780,6 @@
       }
     } else {
       Array.from(select.options).slice(0, 2).forEach(opt => opt.selected = true);
-    }
-  }
-
-  async function loadFeatures({ preserveSelection = true } = {}) {
-    const jsonName = getCurrentJsonName();
-    const select = document.getElementById("featureSelect");
-    const previousSelection = preserveSelection ? getSelectedValues(select) : [];
-    const selectedChannels = getSelectedChannels();
-
-    select.innerHTML = "";
-    cachedSlidingColumns = [];
-
-    if (!jsonName) return;
-
-    const data = await fetchJSON(`/api/file/${encodeURIComponent(jsonName)}/features/sliding/columns`);
-    const allCols = data.columns || [];
-    const filteredCols = filterFeatureColumnsByChannels(allCols, selectedChannels);
-    cachedSlidingColumns = filteredCols;
-
-    filteredCols.forEach((feat) => {
-      const opt = document.createElement("option");
-      opt.value = feat;
-      opt.textContent = feat;
-      select.appendChild(opt);
-    });
-
-    if (filteredCols.length === 0) return;
-
-    if (preserveSelection && previousSelection.length > 0) {
-      const available = new Set(filteredCols);
-      const kept = previousSelection.filter(f => available.has(f));
-      if (kept.length > 0) {
-        setSelectedValues(select, kept);
-      } else {
-        setSelectedValues(select, buildDefaultFeatureSelection(filteredCols, selectedChannels));
-      }
-    } else {
-      setSelectedValues(select, buildDefaultFeatureSelection(filteredCols, selectedChannels));
     }
   }
 
@@ -1109,44 +1870,10 @@
     const layout = multiAxisMode
       ? buildRawLayoutMultiAxis(channels, `${data.file} — Signaux`)
       : buildRawLayoutSingleAxis(`${data.file} — Signaux`);
+    layout.shapes = buildSegmentOverlayShapes();
 
     await Plotly.newPlot("plotRaw", traces, layout, { responsive: true, displaylogo: false });
     attachSync("plotRaw");
-  }
-
-  async function drawFeaturePlot() {
-    const jsonName = getCurrentJsonName();
-    const features = getSelectedValues(document.getElementById("featureSelect"));
-    const maxPoints = document.getElementById("maxFeaturePoints").value || "5000";
-
-    if (!jsonName || features.length === 0) {
-      Plotly.purge("plotFeat");
-      return;
-    }
-
-    const url =
-      `/api/file/${encodeURIComponent(jsonName)}/features/sliding` +
-      `?features=${encodeURIComponent(features.join(","))}` +
-      `&max_points=${encodeURIComponent(maxPoints)}`;
-
-    const data = await fetchJSON(url);
-    const items = data.items || [];
-    if (items.length === 0) {
-      Plotly.purge("plotFeat");
-      return;
-    }
-
-    const traces = features.map((feat) => ({
-      type: "scatter",
-      mode: "lines+markers",
-      name: feat,
-      x: items.map(d => d.time),
-      y: items.map(d => d[feat])
-    }));
-
-    const layout = buildFeatureLayout(`${data.file} — Features glissantes`);
-    await Plotly.newPlot("plotFeat", traces, layout, { responsive: true, displaylogo: false });
-    attachSync("plotFeat");
   }
 
   async function drawTrajectoryPlot() {
@@ -1231,18 +1958,384 @@
     }
   }
 
+  async function drawRolloverPlot() {
+    const jsonName = getCurrentJsonName();
+    const maxPoints = document.getElementById("maxPoints").value || "8000";
+    const thresholds = getLtrThresholds();
+
+    if (!jsonName) {
+      Plotly.purge("plotRolloverLTR");
+      return;
+    }
+
+    const params = new URLSearchParams({
+      max_points: String(maxPoints),
+      warning_threshold: String(thresholds.warning),
+      high_threshold: String(thresholds.high),
+      critical_threshold: String(thresholds.critical)
+    });
+
+    try {
+      const data = await fetchJSON(`/api/file/${encodeURIComponent(jsonName)}/rollover-ltr?${params.toString()}`);
+      cachedRolloverPayload = data;
+      const items = data.items || [];
+      const summary = data.summary || {};
+
+      if (items.length === 0) {
+        Plotly.purge("plotRolloverLTR");
+        return;
+      }
+
+      const traces = [
+        {
+          type: "scatter",
+          mode: "lines",
+          name: "LTR total",
+          x: items.map(d => d.time),
+          y: items.map(d => d.ltr_total),
+          line: { width: 2, color: "#4ea1ff" }
+        },
+        {
+          type: "scatter",
+          mode: "lines",
+          name: "LTR avant",
+          x: items.map(d => d.time),
+          y: items.map(d => d.ltr_front),
+          line: { width: 1, color: "#7ee787" },
+          visible: "legendonly"
+        },
+        {
+          type: "scatter",
+          mode: "lines",
+          name: "LTR arrière",
+          x: items.map(d => d.time),
+          y: items.map(d => d.ltr_rear),
+          line: { width: 1, color: "#f2cc60" },
+          visible: "legendonly"
+        },
+        {
+          type: "scatter",
+          mode: "lines",
+          name: "|LTR|",
+          x: items.map(d => d.time),
+          y: items.map(d => d.abs_ltr_total),
+          line: { width: 1, color: "#ff7b72" },
+          visible: "legendonly"
+        }
+      ];
+
+      const layout = buildRolloverLayout(`${data.file} — Risque de retournement LTR`, thresholds);
+      await Plotly.newPlot("plotRolloverLTR", traces, layout, { responsive: true, displaylogo: false });
+      attachSync("plotRolloverLTR");
+    } catch (err) {
+      console.error("drawRolloverPlot error:", err);
+      cachedRolloverPayload = null;
+      Plotly.purge("plotRolloverLTR");
+    }
+  }
+
+  async function drawRolloverSignalPlot(plotId, channel, label) {
+    const jsonName = getCurrentJsonName();
+    const maxPoints = document.getElementById("maxPoints").value || "8000";
+
+    if (!jsonName) {
+      Plotly.purge(plotId);
+      return;
+    }
+
+    const url =
+      `/api/file/${encodeURIComponent(jsonName)}/series` +
+      `?channels=${encodeURIComponent(channel)}` +
+      `&max_points=${encodeURIComponent(maxPoints)}`;
+
+    try {
+      const data = await fetchJSON(url);
+      const items = data.items || [];
+      if (items.length === 0) {
+        Plotly.purge(plotId);
+        return;
+      }
+
+      const display = getRolloverSignalDisplay(channel, label);
+      const trace = {
+        type: "scatter",
+        mode: "lines",
+        name: display.label,
+        x: items.map(d => d.time),
+        y: items.map(d => display.transform(d[channel])),
+        line: { width: 1.5, color: "#4ea1ff" }
+      };
+      const layout = buildRolloverSignalLayout(`${data.file} — ${display.label}`, display.axisTitle);
+      await Plotly.newPlot(plotId, [trace], layout, { responsive: true, displaylogo: false });
+      attachSync(plotId);
+    } catch (err) {
+      console.error(`drawRolloverSignalPlot ${channel} error:`, err);
+      Plotly.purge(plotId);
+    }
+  }
+
+  async function drawRolloverSignals() {
+    await Promise.all([
+      drawRolloverSignalPlot("plotRolloverVx", "vehicle.vx", "vx"),
+      drawRolloverSignalPlot("plotRolloverVy", "vehicle.vy", "vy"),
+      drawRolloverSignalPlot("plotRolloverAx", "vehicle.ax", "ax"),
+      drawRolloverSignalPlot("plotRolloverAy", "vehicle.ay", "ay"),
+      drawRolloverSignalPlot("plotRolloverRollAngle", "vehicle.roll_angle", "roll angle")
+    ]);
+  }
+
+  function buildRolloverAnalysisPayload(extra = {}) {
+    return {
+      json_name: getCurrentJsonName(),
+      provider: document.getElementById("rolloverProviderSelect").value,
+      thresholds: getLtrThresholds(),
+      segment_filter: {
+        source: document.getElementById("segmentSourceSelect").value,
+        label: document.getElementById("segmentLabelSelect").value
+      },
+      segments: cachedSegmentOverlays,
+      ...extra
+    };
+  }
+
+  async function loadRolloverAnalysisHistory() {
+    const tbody = document.getElementById("rolloverAnalysisHistoryBody");
+    const jsonName = getCurrentJsonName();
+    cachedRolloverAnalyses = [];
+    selectedRolloverAnalysisId = null;
+    clearRolloverCorrectionEditor();
+    if (!tbody || !jsonName) return;
+    tbody.innerHTML = `<tr><td colspan="8">Chargement...</td></tr>`;
+    try {
+      const data = await fetchJSON(`/api/rollover/analyses/${encodeURIComponent(jsonName)}`);
+      cachedRolloverAnalyses = data.items || [];
+      renderRolloverAnalysisHistory();
+    } catch (err) {
+      console.error("loadRolloverAnalysisHistory error:", err);
+      tbody.innerHTML = `<tr><td colspan="8">Erreur historique: ${escapeHtml(err.message || err)}</td></tr>`;
+    }
+  }
+
+  function renderRolloverAnalysisHistory() {
+    const tbody = document.getElementById("rolloverAnalysisHistoryBody");
+    if (!tbody) return;
+    tbody.innerHTML = "";
+    if (cachedRolloverAnalyses.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="8">Aucune analyse sauvegardée pour ce fichier.</td></tr>`;
+      return;
+    }
+
+    cachedRolloverAnalyses.forEach((item) => {
+      const tr = document.createElement("tr");
+      if (Number(item.id) === Number(selectedRolloverAnalysisId)) tr.classList.add("selected-row");
+      const versionLabel = item.is_user_version
+        ? `Version manuelle${item.version_parent_id ? ` de #${item.version_parent_id}` : ""}`
+        : "LLM";
+      const segmentSource = [
+        item.source_segment_source || "-",
+        item.source_segment_label ? `/${item.source_segment_label}` : "",
+        item.source_segment_annotation_id ? ` #${item.source_segment_annotation_id}` : ""
+      ].join("");
+      tr.innerHTML = `
+        <td>${escapeHtml(item.id)}</td>
+        <td>${escapeHtml(item.date_analyse || "-")}</td>
+        <td>${escapeHtml(item.provider || "-")}</td>
+        <td>${escapeHtml(segmentSource)}</td>
+        <td>${escapeHtml(versionLabel)}</td>
+        <td>${escapeHtml(item.confiance || "-")}</td>
+        <td>${escapeHtml(item.synthese || "-")}</td>
+        <td>
+          <div class="button-row" style="grid-template-columns:1fr 1fr; margin:0;">
+            <button class="compact secondary" type="button" onclick="selectRolloverAnalysisForCorrection(${Number(item.id)}); event.stopPropagation();">Corriger</button>
+            <button class="compact danger" type="button" onclick="deleteRolloverAnalysis(${Number(item.id)}); event.stopPropagation();">Supprimer</button>
+          </div>
+        </td>
+      `;
+      tr.addEventListener("click", () => selectRolloverAnalysisForCorrection(Number(item.id)));
+      tbody.appendChild(tr);
+    });
+  }
+
+  function formatRolloverAnalysisForCorrection(item) {
+    return [
+      `Synthèse: ${item.synthese || ""}`,
+      "",
+      `Cohérence LTR/roulis: ${item.coherence_ltr_roulis || ""}`,
+      "",
+      `Nuance seuil: ${item.nuance_seuil || ""}`,
+      "",
+      `Anomalie: ${item.anomalie_detectee || ""}`,
+      "",
+      `Oscillations non capturées: ${Boolean(item.oscillations_non_capturees)}`,
+      "",
+      `Confiance: ${item.confiance || ""}`,
+      "",
+      `Notes: ${item.notes || ""}`
+    ].join("\n");
+  }
+
+  function clearRolloverCorrectionEditor() {
+    const sourceEl = document.getElementById("rolloverAnalysisSourceText");
+    const correctionEl = document.getElementById("rolloverAnalysisCorrectionText");
+    const saveBtn = document.getElementById("saveRolloverCorrectionBtn");
+    if (sourceEl) sourceEl.value = "";
+    if (correctionEl) correctionEl.value = "";
+    if (saveBtn) saveBtn.disabled = true;
+  }
+
+  function selectRolloverAnalysisForCorrection(analysisId) {
+    const source = cachedRolloverAnalyses.find(item => Number(item.id) === Number(analysisId));
+    if (!source) return;
+    selectedRolloverAnalysisId = Number(analysisId);
+    const sourceText = formatRolloverAnalysisForCorrection(source);
+    document.getElementById("rolloverAnalysisSourceText").value = sourceText;
+    document.getElementById("rolloverAnalysisCorrectionText").value = sourceText;
+    document.getElementById("rolloverCorrectionConfidence").value = source.confiance || "moyenne";
+    document.getElementById("rolloverCorrectionNote").value = source.version_note || "Correction humaine de l'analyse LLM";
+    document.getElementById("saveRolloverCorrectionBtn").disabled = false;
+    renderRolloverAnalysisHistory();
+  }
+
+  async function deleteRolloverAnalysis(analysisId) {
+    if (!Number.isFinite(Number(analysisId))) return;
+    const ok = window.confirm(`Supprimer l'analyse #${analysisId} ?`);
+    if (!ok) return;
+    const statusEl = document.getElementById("rolloverAnalysisStatus");
+    try {
+      const response = await fetch(`/api/rollover/analyses/${encodeURIComponent(analysisId)}`, {
+        method: "DELETE"
+      });
+      if (!response.ok) {
+        const text = await response.text();
+        throw new Error(text || `HTTP ${response.status}`);
+      }
+      statusEl.textContent = `Analyse #${analysisId} supprimée.`;
+      await loadRolloverAnalysisHistory();
+    } catch (err) {
+      console.error("deleteRolloverAnalysis error:", err);
+      statusEl.textContent = `Erreur suppression: ${err.message || err}`;
+    }
+  }
+
+  async function createRolloverAnalysisVersion(analysisId = selectedRolloverAnalysisId) {
+    const source = cachedRolloverAnalyses.find(item => Number(item.id) === Number(analysisId));
+    if (!source) return;
+    const correctionText = document.getElementById("rolloverAnalysisCorrectionText").value.trim();
+    if (!correctionText) {
+      document.getElementById("rolloverAnalysisStatus").textContent = "Correction vide: rien à sauvegarder.";
+      return;
+    }
+    const confiance = document.getElementById("rolloverCorrectionConfidence").value || "moyenne";
+    const note = document.getElementById("rolloverCorrectionNote").value || "Correction humaine de l'analyse LLM";
+    const statusEl = document.getElementById("rolloverAnalysisStatus");
+    const payload = {
+      synthese: correctionText,
+      version_note: note,
+      notes: source.notes || "",
+      coherence_ltr_roulis: source.coherence_ltr_roulis || "",
+      oscillations_non_capturees: Boolean(source.oscillations_non_capturees),
+      anomalie_detectee: source.anomalie_detectee || "aucune",
+      nuance_seuil: source.nuance_seuil || "",
+      confiance: String(confiance).trim().toLowerCase()
+    };
+    try {
+      const response = await fetch(`/api/rollover/analyses/${encodeURIComponent(analysisId)}/versions`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+      if (!response.ok) {
+        const text = await response.text();
+        throw new Error(text || `HTTP ${response.status}`);
+      }
+      const data = await response.json();
+      statusEl.textContent = `Correction #${data.analysis_id} sauvegardée depuis l'analyse #${analysisId}.`;
+      await loadRolloverAnalysisHistory();
+    } catch (err) {
+      console.error("createRolloverAnalysisVersion error:", err);
+      statusEl.textContent = `Erreur création version: ${err.message || err}`;
+    }
+  }
+
+  function renderRolloverAnalysisResult(data, modeLabel) {
+    const resultEl = document.getElementById("rolloverAnalysisResult");
+    const usage = data.raw_usage || {};
+    const rateLimit = data.rate_limit || {};
+    const usageLines = [
+      "## Usage provider",
+      `- Prompt tokens: ${usage.prompt_tokens ?? usage.prompt_tokens_details?.total_tokens ?? "n/a"}`,
+      `- Completion tokens: ${usage.completion_tokens ?? "n/a"}`,
+      `- Total tokens: ${usage.total_tokens ?? "n/a"}`,
+      `- Tokens restants/min: ${rateLimit.remaining_tokens ?? "n/a"} / ${rateLimit.limit_tokens ?? "n/a"}`,
+      `- Requêtes restantes/jour: ${rateLimit.remaining_requests ?? "n/a"} / ${rateLimit.limit_requests ?? "n/a"}`,
+      `- Reset tokens: ${rateLimit.reset_tokens ?? "n/a"}`,
+      `- Reset requêtes: ${rateLimit.reset_requests ?? "n/a"}`
+    ].join("\n");
+    const fullMarkdown = [
+      `## ${modeLabel}`,
+      data.finish_reason && data.finish_reason !== "stop" ? `> Sortie potentiellement tronquée par Groq: \`${data.finish_reason}\`` : "",
+      data.analysis || "Analyse vide.",
+      usageLines
+    ].filter(Boolean).join("\n\n");
+    resultEl.innerHTML = renderMarkdown(fullMarkdown);
+  }
+
+  async function analyzeRolloverWithProvider() {
+    const button = document.getElementById("analyzeRolloverBtn");
+    const statusEl = document.getElementById("rolloverAnalysisStatus");
+    const resultEl = document.getElementById("rolloverAnalysisResult");
+    const provider = document.getElementById("rolloverProviderSelect").value;
+    button.disabled = true;
+    const previousLabel = button.textContent;
+    button.textContent = "Analyse en cours...";
+    statusEl.textContent = `Calcul segment et appel ${provider}...`;
+    resultEl.innerHTML = "";
+
+    try {
+      await drawRolloverPlot();
+      await drawRolloverSignals();
+      if (cachedSegmentOverlays.length === 0) {
+        throw new Error("Sélectionne un filtre segment avec au moins un segment annoté avant de lancer l'analyse.");
+      }
+
+      const response = await fetch("/api/rollover/analyze", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(buildRolloverAnalysisPayload())
+      });
+
+      if (!response.ok) {
+        const text = await response.text();
+        throw new Error(text || `HTTP ${response.status}`);
+      }
+      const data = await response.json();
+      renderRolloverAnalysisResult(data, `Analyse segment - ${data.provider || provider}`);
+      statusEl.textContent = `Analyse sauvegardée avec ${data.model || data.provider || provider}.`;
+      await loadRolloverAnalysisHistory();
+    } catch (err) {
+      console.error("analyzeRolloverWithProvider error:", err);
+      statusEl.textContent = `Erreur analyse ${provider}: ${err.message || err}`;
+    } finally {
+      button.disabled = false;
+      button.textContent = previousLabel;
+    }
+  }
+
 
 
   async function refreshAllViews() {
     await loadSummary();
     await loadChannels({ preserveSelection: true });
-    await loadFeatures({ preserveSelection: true });
     await loadGlobalFeatures();
+    await loadSegmentOverlays();
     renderCatalogueView();
     renderCatalogTable();
+    renderValidityView();
     await drawRawPlot();
-    await drawFeaturePlot();
     await drawTrajectoryPlot();
+    await drawRolloverPlot();
+    await drawRolloverSignals();
+    await loadRolloverAnalysisHistory();
     updateNavButtons();
   }
 
@@ -1266,28 +2359,14 @@
   document.getElementById("channelSelect").addEventListener("change", async () => {
     try {
       enforceMaxTwoChannels();
-      await loadFeatures({ preserveSelection: true });
       renderCatalogueView();
       renderCatalogTable();
       await drawRawPlot();
-      await drawFeaturePlot();
       await drawTrajectoryPlot();
     } catch (err) {
       setStatus(`Erreur canaux:\n${err}`);
     }
   });
-
-  document.getElementById("featureSelect").addEventListener("change", async () => {
-    try {
-      renderCatalogueView();
-      renderCatalogTable();
-      await drawFeaturePlot();
-    } catch (err) {
-      setStatus(`Erreur features:\n${err}`);
-    }
-  });
-
-
 
   document.getElementById("refreshBtn").addEventListener("click", async () => {
     try {
@@ -1303,6 +2382,86 @@
     } catch (err) {
       setStatus(`Erreur changement de mode:\n${err}`);
     }
+  });
+
+  document.getElementById("segmentSourceSelect").addEventListener("change", async () => {
+    try {
+      const previousFile = getCurrentJsonName();
+      await applyFileFilterFromSegments({ preserveValue: true });
+      if (getCurrentJsonName() && getCurrentJsonName() !== previousFile) {
+        await refreshAllViews();
+      } else {
+        await loadSegmentOverlays();
+        renderCatalogTable();
+        renderValidityView();
+        updateNavButtons();
+        await drawRawPlot();
+        await drawRolloverPlot();
+        await drawRolloverSignals();
+      }
+    } catch (err) {
+      setStatus(`Erreur source segments:\n${err}`);
+    }
+  });
+
+  document.getElementById("segmentLabelSelect").addEventListener("change", async () => {
+    try {
+      const previousFile = getCurrentJsonName();
+      await applyFileFilterFromSegments({ preserveValue: true });
+      if (getCurrentJsonName() && getCurrentJsonName() !== previousFile) {
+        await refreshAllViews();
+      } else {
+        await loadSegmentOverlays();
+        renderCatalogTable();
+        renderValidityView();
+        updateNavButtons();
+        await drawRawPlot();
+        await drawRolloverPlot();
+        await drawRolloverSignals();
+      }
+    } catch (err) {
+      setStatus(`Erreur label segment:\n${err}`);
+    }
+  });
+
+  document.getElementById("segmentModelSelect").addEventListener("change", async () => {
+    try {
+      await loadSegmentOverlays();
+      await drawRawPlot();
+      await drawRolloverPlot();
+      await drawRolloverSignals();
+    } catch (err) {
+      setStatus(`Erreur modèle segment:\n${err}`);
+    }
+  });
+
+  document.getElementById("showSegmentOverlays").addEventListener("change", async () => {
+    try {
+      await drawRawPlot();
+      await drawRolloverPlot();
+      await drawRolloverSignals();
+    } catch (err) {
+      setStatus(`Erreur overlays:\n${err}`);
+    }
+  });
+
+  ["ltrWarningThreshold", "ltrHighThreshold", "ltrCriticalThreshold"].forEach(id => {
+    document.getElementById(id).addEventListener("change", async () => {
+      try {
+        await drawRolloverPlot();
+        await drawRolloverSignals();
+      } catch (err) {
+        setStatus(`Erreur seuil LTR:\n${err}`);
+      }
+    });
+  });
+
+  document.getElementById("analyzeRolloverBtn").addEventListener("click", async () => {
+    await analyzeRolloverWithProvider();
+  });
+
+  document.getElementById("saveRolloverCorrectionBtn").addEventListener("click", async () => {
+    await createRolloverAnalysisVersion();
   });
 
   document.getElementById("prevBtn").addEventListener("click", async () => {
@@ -1328,7 +2487,7 @@
   });
 
   window.addEventListener("resize", () => {
-    ["plotRaw", "plotFeat", "plotTrajectory"].forEach(id => {
+    ["plotRaw", "plotTrajectory", "plotRolloverLTR", "plotRolloverVx", "plotRolloverVy", "plotRolloverAx", "plotRolloverAy", "plotRolloverRollAngle"].forEach(id => {
       const el = document.getElementById(id);
       if (el) Plotly.Plots.resize(el);
     });
@@ -1337,7 +2496,14 @@
   (async () => {
     try {
       setupTabs();
-      activateTab("tab-detail");
+      const params = getUrlParams();
+      const view = params.get("view");
+      const segmentSource = params.get("segmentSource");
+      if (segmentSource && document.getElementById("segmentSourceSelect").querySelector(`option[value="${segmentSource}"]`)) {
+        document.getElementById("segmentSourceSelect").value = segmentSource;
+      }
+      activateTab(view === "validity" ? "tab-validity" : (view === "rollover" ? "tab-rollover" : "tab-detail"));
+      await loadValiditySideData();
       await loadFiles();
       await refreshAllViews();
       setStatus("Application prête.");

@@ -1,0 +1,2 @@
+"""Modele CNN de segmentation."""
+

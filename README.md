@@ -11,17 +11,24 @@ index CSV/JSON et rendus de visualisation sont regenerables et ignores par Git.
 
 ## Structure du depot
 
+- `src/mas_essais/` : package Python principal.
+  - `api/` : application FastAPI.
+  - `db/` : acces SQLite et repositories bas niveau.
+  - `domain/` : schemas, normalisation et logique metier.
+  - `io/` : lecteurs de fichiers externes, dont Dewesoft.
+  - `ml/` : modeles et entrainements.
+- `scripts/` : commandes de pipeline et d'entrainement lancables directement.
+- `app.py` : point d'entree de compatibilite pour lancer FastAPI avec
+  `uvicorn app:app`.
 - `data/` : acquisitions brutes `.dxd`. Ces fichiers sont volumineux et restent
   la source de verite locale.
 - `DWDataReader_v5_0_4/` : SDK Dewesoft fourni avec le projet, dont les binaires
   natifs et exemples Python/C/Matlab.
-- `00_scan_dxd_channel_presence.py` : pipeline principal. Il scanne `data/*.dxd`,
+- `scripts/scan_dxd_channel_presence.py` : pipeline principal. Il scanne `data/*.dxd`,
   verifie les canaux cibles, exporte les JSON re-echantillonnes et produit les
   index de suivi.
-- `01_export_dxd_resampled_json.py` : ancien exporteur base sur
-  `channel_presence.csv`. A utiliser seulement si le flux historique est requis.
-- `02_extract_features.py` : extraction de features univariees par fenetre depuis
-  les JSON re-echantillonnes.
+- `scripts/extract_features.py` : extraction de features univariees par fenetre
+  depuis les JSON re-echantillonnes.
 - `build_window_quality_index.py` : calcule les scores de qualite et de
   coherence physique par fenetre.
 - `build_window_cluster_index.py` : regroupe les fenetres comparables par
@@ -32,8 +39,8 @@ index CSV/JSON et rendus de visualisation sont regenerables et ignores par Git.
   les vues de derive.
 - `build_correlation_anomaly_index.py` : detecte des ruptures de relation entre
   capteurs par type de piste.
-- `dxd_schema.py` : normalisation des noms de canaux, unites et schemas JSON.
-- `app.py` : API FastAPI et serveur de l'interface web.
+- `scripts/migrate_pipeline_to_sqlite.py` : migration des artefacts CSV/JSON
+  vers `pipeline.sqlite`.
 - `static/index.html` : interface de consultation.
 - `specs/` : notes/specifications fonctionnelles et techniques.
 
@@ -64,6 +71,7 @@ Depuis la racine du depot :
 python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
+pip install -e .
 ```
 
 Les dependances Python declarees sont volontairement courtes :
@@ -79,7 +87,7 @@ Les dependances Python declarees sont volontairement courtes :
 2. Scanner et convertir les acquisitions :
 
 ```bash
-python 00_scan_dxd_channel_presence.py
+python scripts/scan_dxd_channel_presence.py
 ```
 
 Sorties principales :
@@ -144,7 +152,29 @@ Sorties :
 - `drift_index.json`
 - `correlation_anomaly_index.json`
 
-8. Lancer l'application :
+8. Migrer les artefacts vers SQLite, si l'on veut utiliser une base unique pour
+   l'application :
+
+```bash
+python scripts/migrate_pipeline_to_sqlite.py
+```
+
+Sortie :
+
+- `pipeline.sqlite`
+
+Par defaut, le script importe les index JSON/CSV, les annotations et les exports
+JSON re-echantillonnes. Pour ne migrer que les index et annotations, sans les
+JSON volumineux :
+
+```bash
+python scripts/migrate_pipeline_to_sqlite.py --skip-resampled-json
+```
+
+L'application FastAPI utilise `pipeline.sqlite` en priorite quand la base existe
+et retombe sur les fichiers CSV/JSON historiques sinon.
+
+9. Lancer l'application :
 
 ```bash
 uvicorn app:app --reload
@@ -214,9 +244,9 @@ Les elements suivants ont ete supprimes car ils etaient locaux ou regenerables :
 ## Notes de maintenance
 
 - Les scripts supposent une execution depuis la racine du depot.
-- `00_scan_dxd_channel_presence.py` est le point d'entree principal. Il remplace
+- `scripts/scan_dxd_channel_presence.py` est le point d'entree principal. Il remplace
   en pratique l'ancien couple scan/export separe.
-- `dxd_schema.py` centralise les conversions d'unites et noms canoniques. Ajouter
+- `src/mas_essais/domain/dxd_schema.py` centralise les conversions d'unites et noms canoniques. Ajouter
   un nouveau canal ici evite de dupliquer la logique dans l'application.
 - Les fichiers `.dxd` occupent la majorite de l'espace disque. Ne les supprimer
   que si une copie source existe ailleurs.

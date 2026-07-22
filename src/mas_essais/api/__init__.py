@@ -1,0 +1,2 @@
+"""API web FastAPI."""
+

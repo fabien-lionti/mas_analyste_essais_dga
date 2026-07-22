@@ -1,0 +1,2 @@
+"""Scripts executables du projet."""
+

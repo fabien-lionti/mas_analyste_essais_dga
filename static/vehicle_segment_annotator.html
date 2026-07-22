@@ -41,19 +41,70 @@
     }
 
     /* Layout */
+    .app-header {
+      height: 58px;
+      display: grid;
+      grid-template-columns: 1fr auto 1fr;
+      align-items: center;
+      gap: 16px;
+      padding: 0 20px;
+      background: var(--panel-solid);
+      border-bottom: 1px solid var(--border);
+      position: sticky;
+      top: 0;
+      z-index: 20;
+    }
+
+    .app-brand {
+      font-weight: 800;
+      white-space: nowrap;
+    }
+
+    .app-title {
+      color: var(--muted);
+      font-size: 13px;
+      margin-top: 2px;
+    }
+
+    .app-nav {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      flex-wrap: wrap;
+      grid-column: 2;
+    }
+
+    .app-nav a {
+      color: var(--muted);
+      text-decoration: none;
+      border: 1px solid transparent;
+      border-radius: 8px;
+      padding: 8px 10px;
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    .app-nav a:hover,
+    .app-nav a.active {
+      color: var(--text);
+      border-color: var(--border);
+      background: rgba(15, 23, 42, 0.6);
+    }
+
     .app-container {
       display: grid;
       grid-template-columns: 380px 1fr;
-      min-height: 100vh;
+      min-height: calc(100vh - 58px);
     }
 
     aside {
       background: var(--panel-solid);
       border-right: 1px solid var(--border);
-      height: 100vh;
+      height: calc(100vh - 58px);
       overflow-y: auto;
       position: sticky;
-      top: 0;
+      top: 58px;
       padding: 24px;
       display: flex;
       flex-direction: column;
@@ -66,7 +117,7 @@
       flex-direction: column;
       gap: 20px;
       overflow-y: auto;
-      max-height: 100vh;
+      max-height: calc(100vh - 58px);
     }
 
     /* Headings */
@@ -404,38 +455,47 @@
       background: rgba(255, 255, 255, 0.24);
     }
   </style>
+  <link rel="stylesheet" href="/static/common_ui.css" />
 </head>
 <body>
+  <header class="app-header">
+    <div>
+      <div class="app-brand">MAS Essais</div>
+      <div class="app-title">Annotateur actif de segments</div>
+    </div>
+    <nav class="app-nav">
+      <a href="/?view=validity">Validité</a>
+      <a href="/?view=explorer">Données d'essais</a>
+      <a href="/?view=rollover">Retournement</a>
+      <a href="/annotator" class="active">Annotateur</a>
+      <a href="/drift-coherence">Drift</a>
+    </nav>
+  </header>
   <div class="app-container">
     <!-- Sidebar -->
     <aside>
-      <a href="/" class="btn-dashboard">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
-        Retour au dashboard
-      </a>
-      
-      <h1>
-        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
-        Annotateur Actif
-      </h1>
-      
-      <!-- Training Status Box -->
       <div class="train-box">
-        <h2>Entraînement Modèle</h2>
-        <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
-          <div>
-            <label for="cnnWindowSecInput">Fenêtre (s)</label>
-            <input type="number" id="cnnWindowSecInput" min="0.5" max="30" step="0.5" value="4.0">
-          </div>
-          <div>
-            <label for="cnnStrideSecInput">Stride (s)</label>
-            <input type="number" id="cnnStrideSecInput" min="0.1" max="10" step="0.1" value="1.0">
-          </div>
+        <h2>Filtres segments</h2>
+        <div>
+          <label for="segmentSourceSelect">Source segments</label>
+          <select id="segmentSourceSelect">
+            <option value="annotations_cnn" selected>Annotations + prédictions CNN</option>
+            <option value="annotations">Annotations uniquement</option>
+            <option value="cnn">Prédictions CNN uniquement</option>
+            <option value="none">Aucun filtre segment</option>
+          </select>
         </div>
-        <button id="trainModelBtn">Lancer l'entraînement (CNN)</button>
-        <div id="trainStatusLabel" class="status-text text-muted">Aucun entraînement en cours.</div>
-        <div class="progress-bar-container" id="progressBarContainer">
-          <div class="progress-bar" id="progressBar"></div>
+        <div>
+          <label for="segmentLabelSelect">Label</label>
+          <select id="segmentLabelSelect">
+            <option value="">Tous les labels</option>
+          </select>
+        </div>
+        <div>
+          <label for="segmentModelSelect">Modèle</label>
+          <select id="segmentModelSelect">
+            <option value="segment_cnn">CNN actif</option>
+          </select>
         </div>
       </div>
 
@@ -481,8 +541,59 @@
         <button id="resumeLastEndBtn" class="secondary">Reprendre à la fin</button>
       </div>
 
+      <!-- Save Annotation Form -->
+      <div class="train-box">
+        <h2>Annotation courante</h2>
+        <div>
+          <label>Classe</label>
+          <select id="labelSelect"></select>
+        </div>
+        <div>
+          <label>Classe personnalisée</label>
+          <input type="text" id="customLabelInput" placeholder="Optionnel...">
+        </div>
+        <div>
+          <label>Confiance</label>
+          <select id="confidenceSelect">
+            <option>0</option>
+            <option>1</option>
+            <option>2</option>
+            <option>3</option>
+            <option selected>4</option>
+            <option>5</option>
+          </select>
+        </div>
+        <div>
+          <label>Commentaire</label>
+          <textarea id="commentInput" placeholder="Ajouter un commentaire..."></textarea>
+        </div>
+        <button id="saveAnnotationBtn">Sauvegarder segment</button>
+        <button id="cancelEditBtn" class="secondary">Annuler modification</button>
+        <div id="saveStatusMessage" class="status-text" style="color:var(--green); font-weight:500;"></div>
+      </div>
+
+      <!-- Training Status Box -->
+      <div class="train-box">
+        <h2>Entraînement Modèle</h2>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
+          <div>
+            <label for="cnnWindowSecInput">Fenêtre (s)</label>
+            <input type="number" id="cnnWindowSecInput" min="0.5" max="30" step="0.5" value="4.0">
+          </div>
+          <div>
+            <label for="cnnStrideSecInput">Stride (s)</label>
+            <input type="number" id="cnnStrideSecInput" min="0.1" max="10" step="0.1" value="1.0">
+          </div>
+        </div>
+        <button id="trainModelBtn">Lancer l'entraînement (CNN)</button>
+        <div id="trainStatusLabel" class="status-text text-muted">Aucun entraînement en cours.</div>
+        <div class="progress-bar-container" id="progressBarContainer">
+          <div class="progress-bar" id="progressBar"></div>
+        </div>
+      </div>
+
       <!-- Model summary metadata -->
-      <div class="train-box" style="margin-top:auto;">
+      <div class="train-box">
         <h2>CNN Baseline Info</h2>
         <div id="cnnModelSummary" class="status-text">Chargement...</div>
       </div>
@@ -557,37 +668,6 @@
 
         <!-- Controls Column -->
         <div class="controls-column">
-          <!-- Save Annotation Form -->
-          <div class="card" style="display:flex; flex-direction:column; gap:12px;">
-            <h2>Enregistrer Annotation</h2>
-            <div>
-              <label>Classe</label>
-              <select id="labelSelect"></select>
-            </div>
-            <div>
-              <label>Classe personnalisée</label>
-              <input type="text" id="customLabelInput" placeholder="Optionnel...">
-            </div>
-            <div>
-              <label>Confiance</label>
-              <select id="confidenceSelect">
-                <option>0</option>
-                <option>1</option>
-                <option>2</option>
-                <option>3</option>
-                <option selected>4</option>
-                <option>5</option>
-              </select>
-            </div>
-            <div>
-              <label>Commentaire</label>
-              <textarea id="commentInput" placeholder="Ajouter un commentaire..."></textarea>
-            </div>
-            <button id="saveAnnotationBtn">Sauvegarder segment</button>
-            <button id="cancelEditBtn" class="secondary">Annuler modification</button>
-            <div id="saveStatusMessage" class="status-text" style="color:var(--green); font-weight:500;"></div>
-          </div>
-
           <!-- Category Management Card -->
           <div class="card" style="display:flex; flex-direction:column; gap:10px;">
             <h2>Gestion des Labels</h2>
@@ -652,7 +732,10 @@
       timeStep: 0.1,
       editingAnnotationId: null,
       isTraining: false,
+      modelSummary: null,
       categories: [],
+      segmentSource: "annotations_cnn",
+      selectedSegmentLabel: "",
       gpsShowFullTrack: true,
       gpsShowAnnotations: true,
       gpsShowPredictions: true,
@@ -731,6 +814,67 @@
       return await r.json();
     }
 
+    function getUrlParams() {
+      return new URLSearchParams(window.location.search);
+    }
+
+    function sourceAllowsAnnotations() {
+      return S.segmentSource === "annotations" || S.segmentSource === "annotations_cnn" || S.segmentSource === "none";
+    }
+
+    function sourceAllowsPredictions() {
+      return S.segmentSource === "cnn" || S.segmentSource === "annotations_cnn" || S.segmentSource === "none";
+    }
+
+    function rowMatchesSelectedLabel(row) {
+      return !S.selectedSegmentLabel || row.label === S.selectedSegmentLabel;
+    }
+
+    function applySegmentFilterState() {
+      S.segmentSource = E("segmentSourceSelect").value;
+      S.selectedSegmentLabel = E("segmentLabelSelect").value;
+      S.gpsShowAnnotations = sourceAllowsAnnotations();
+      S.gpsShowPredictions = sourceAllowsPredictions();
+      S.gpsFilterLabels = S.selectedSegmentLabel ? [S.selectedSegmentLabel] : [];
+      E("chkGpsShowAnnotations").checked = S.gpsShowAnnotations;
+      E("chkGpsShowPredictions").checked = S.gpsShowPredictions;
+      renderGpsLabelFilters();
+      renderSuggestions();
+      renderAnnotationsTable();
+      if (S.data) renderPlots();
+    }
+
+    function renderSegmentFilterOptions() {
+      const labelSelect = E("segmentLabelSelect");
+      const previous = labelSelect.value;
+      const labels = new Set(DEFAULT_CATEGORIES);
+      S.categories.forEach(label => labels.add(label));
+      S.annotations.forEach(row => row.label && labels.add(row.label));
+      S.suggestions.forEach(row => row.label && labels.add(row.label));
+      (S.modelSummary?.label_names || []).forEach(label => labels.add(label));
+
+      labelSelect.innerHTML = '<option value="">Tous les labels</option>';
+      [...labels].filter(Boolean).sort().forEach(label => {
+        const opt = document.createElement("option");
+        opt.value = label;
+        opt.textContent = label;
+        labelSelect.appendChild(opt);
+      });
+      if (previous && [...labels].includes(previous)) {
+        labelSelect.value = previous;
+      }
+
+      const modelSelect = E("segmentModelSelect");
+      const nClasses = S.modelSummary?.n_classes;
+      const windowSec = S.modelSummary?.window_sec;
+      const label = [
+        "CNN actif",
+        nClasses ? `${nClasses} labels` : null,
+        windowSec ? `${fmt(windowSec, 1, " s")}` : null
+      ].filter(Boolean).join(" · ");
+      modelSelect.innerHTML = `<option value="segment_cnn">${esc(label)}</option>`;
+    }
+
     function normalizeData(raw) {
       const n = (raw.time || []).length;
       const c = raw.channels || {};
@@ -788,6 +932,7 @@
       
       renderCategoryOptions();
       await renderCategoriesManager();
+      renderSegmentFilterOptions();
     }
 
     function renderCategoryOptions() {
@@ -929,8 +1074,9 @@
         
         if (S.files.length > 0) {
           let idx = 0;
-          if (selectNameAfterLoad) {
-            const foundIdx = S.files.findIndex(f => f.json_name === selectNameAfterLoad);
+          const wantedName = selectNameAfterLoad || getUrlParams().get("file");
+          if (wantedName) {
+            const foundIdx = S.files.findIndex(f => f.json_name === wantedName);
             if (foundIdx !== -1) idx = foundIdx;
           }
           await selectFile(idx);
@@ -1034,6 +1180,7 @@
       } catch (e) {
         S.annotations = [];
       }
+      renderSegmentFilterOptions();
     }
 
     async function loadModelPredictions() {
@@ -1042,9 +1189,11 @@
       try {
         const data = await api("/api/segment-model/file/" + encodeURIComponent(S.data.name) + "?stride_sec=2.0&smooth_radius=2");
         S.suggestions = data.suggestions || [];
+        renderSegmentFilterOptions();
         renderSuggestions();
       } catch (e) {
         S.suggestions = [];
+        renderSegmentFilterOptions();
         E("suggestionsList").innerHTML = '<div class="status-text" style="color:var(--muted);">Suggestions indisponibles.</div>';
       }
     }
@@ -1052,13 +1201,20 @@
     function renderSuggestions() {
       const container = E("suggestionsList");
       container.innerHTML = "";
+
+      if (!sourceAllowsPredictions()) {
+        container.innerHTML = '<div class="status-text" style="color:var(--muted);">Prédictions masquées par le filtre de source.</div>';
+        return;
+      }
       
-      if (!S.suggestions.length) {
+      const suggestions = S.suggestions.filter(rowMatchesSelectedLabel);
+      if (!suggestions.length) {
         container.innerHTML = '<div class="status-text" style="color:var(--muted);">Aucune suggestion pour ce fichier.</div>';
         return;
       }
       
-      S.suggestions.forEach((s, idx) => {
+      suggestions.forEach((s) => {
+        const idx = S.suggestions.indexOf(s);
         const card = document.createElement("div");
         card.className = "suggestion-card";
         
@@ -1155,6 +1311,8 @@
     async function loadModelSummary() {
       try {
         const summary = await api("/api/segment-model/summary");
+        S.modelSummary = summary.status === "ok" ? summary : null;
+        renderSegmentFilterOptions();
         if (summary.status === "ok") {
           if (!S.isTraining) {
             E("cnnWindowSecInput").value = summary.window_sec ?? E("cnnWindowSecInput").value;
@@ -1182,9 +1340,13 @@
             </table>
           `;
         } else {
+          S.modelSummary = null;
+          renderSegmentFilterOptions();
           E("cnnModelSummary").innerHTML = '<span style="color:var(--muted);">Aucun modèle entraîné.</span>';
         }
       } catch (e) {
+        S.modelSummary = null;
+        renderSegmentFilterOptions();
         E("cnnModelSummary").textContent = "Modèle indisponible.";
       }
     }
@@ -1469,13 +1631,19 @@
     function renderAnnotationsTable() {
       const tbody = E("annotationsTableBody");
       tbody.innerHTML = "";
-      
-      if (!S.annotations.length) {
+
+      if (!sourceAllowsAnnotations()) {
+        tbody.innerHTML = '<tr><td colspan="8" style="text-align:center; color:var(--muted);">Annotations masquées par le filtre de source.</td></tr>';
+        return;
+      }
+
+      const annotations = S.annotations.filter(rowMatchesSelectedLabel);
+      if (!annotations.length) {
         tbody.innerHTML = '<tr><td colspan="8" style="text-align:center; color:var(--muted);">Aucune annotation pour ce fichier.</td></tr>';
         return;
       }
       
-      S.annotations.forEach(r => {
+      annotations.forEach(r => {
         const row = document.createElement("tr");
         if (S.editingAnnotationId === r.annotation_id) {
           row.className = "editing";
@@ -1727,6 +1895,9 @@
     }
 
     // Register event listeners
+    E("segmentSourceSelect").addEventListener("change", applySegmentFilterState);
+    E("segmentLabelSelect").addEventListener("change", applySegmentFilterState);
+    E("segmentModelSelect").addEventListener("change", applySegmentFilterState);
     E("fileSearchInput").addEventListener("input", renderFileListContainer);
     E("startInput").addEventListener("change", () => setStart(Number(E("startInput").value)));
     E("endInput").addEventListener("change", () => setEnd(Number(E("endInput").value)));

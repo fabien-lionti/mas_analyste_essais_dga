@@ -1,11 +1,10 @@
-# Spécification — Page d'exploration par labels CNN sans entraînement ni détection NODE
+# Spécification — Page d'exploration par labels CNN sans entraînement
 
 ## 1. Objectif
 
 L'objectif est de recentrer la page applicative sur l'exploration des signaux et des distributions glissantes, en supprimant tout ce qui concerne :
 
 - l'entraînement du modèle CNN depuis l'interface ;
-- l'entraînement Neural ODE / NODE ;
 - les contrôles de lancement d'analyse de drift depuis la page ;
 - la présentation orientée détection automatique d'anomalie ou de drift.
 
@@ -85,19 +84,7 @@ L'interface ne doit plus afficher :
 
 Les routes backend peuvent rester disponibles dans un premier temps si d'autres pages les utilisent, mais elles ne doivent plus être appelées par cette page.
 
-### 3.2 Neural ODE / NODE
-
-L'interface ne doit plus afficher :
-
-- mode `Train Neural ODE` ;
-- bouton de lancement Neural ODE ;
-- paramètres Neural ODE : horizon, historique, batch, epochs, learning rate, output directory ;
-- progression Neural ODE ;
-- wording indiquant une détection automatique par Neural ODE.
-
-Les résultats déjà calculés peuvent être lus uniquement s'ils servent à afficher des séries ou métriques existantes, sans exposer l'entraînement.
-
-### 3.3 Détection de drift
+### 3.2 Détection de drift
 
 La page ne doit plus présenter la fonctionnalité comme une détection de drift à entraîner ou déclencher.
 
@@ -477,8 +464,6 @@ Le vocabulaire à éviter dans cette page :
 ```text
 entraînement
 train
-Neural ODE
-NODE
 détection de drift
 anomalie détectée
 score anomalie
@@ -500,8 +485,8 @@ L'interface doit distinguer visuellement les labels validés et les suggestions 
 
 La modification est acceptée si :
 
-1. La page ne contient plus de bouton ni panneau permettant d'entraîner un CNN, un modèle Neural ODE / NODE ou une analyse de drift.
-2. Aucun appel réseau de la page ne cible `POST /api/segment-model/train`, `POST /api/neural-ode/train` ou `POST /api/drift-coherence/train`.
+1. La page ne contient plus de bouton ni panneau permettant d'entraîner un CNN ou une analyse de drift.
+2. Aucun appel réseau de la page ne cible `POST /api/segment-model/train` ou `POST /api/drift-coherence/train`.
 3. L'utilisateur peut choisir un label CNN ou annotation et filtrer les vues avec ce label.
 4. L'utilisateur peut choisir au moins les signaux `vx`, `vy`, `ax`, `ay/axy`, `steer_s1`, `steer_s2` lorsque les données sont disponibles.
 5. Les séries temporelles et distributions glissantes se mettent à jour après changement de label, capteur ou fichier.
@@ -533,7 +518,6 @@ La modification est acceptée si :
 Cette modification ne couvre pas :
 
 - le réentraînement du CNN ;
-- la création d'une nouvelle architecture Neural ODE / NODE ;
 - la calibration de seuils d'anomalie ;
 - la décision automatique de drift ;
 - la suppression définitive des scripts d'entraînement du dépôt.

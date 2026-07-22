@@ -2,9 +2,15 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from pathlib import Path
 
-from segment_cnn_model import MODEL_PROGRESS_PATH, MODEL_SUMMARY_PATH, TrainingConfig, train_from_annotations
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+SRC_DIR = PROJECT_ROOT / "src"
+if str(SRC_DIR) not in sys.path:
+    sys.path.insert(0, str(SRC_DIR))
+
+from mas_essais.ml.segment_cnn.model import MODEL_PROGRESS_PATH, MODEL_SUMMARY_PATH, TrainingConfig, train_from_annotations
 
 
 def parse_args() -> argparse.Namespace:

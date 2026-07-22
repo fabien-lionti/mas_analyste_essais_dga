@@ -28,6 +28,7 @@ CHANNEL_SPECS: tuple[ChannelSpec, ...] = (
     ChannelSpec("VehYaw_W_Actl (rad/s)", "vehicle.yaw_rate", "rad/s", "rad/s", frame="vehicle_body"),
     ChannelSpec("VehPtch_W_Actl (rad/s)", "vehicle.pitch_rate", "rad/s", "rad/s", frame="vehicle_body"),
     ChannelSpec("VehRol_W_Actl (rad/s)", "vehicle.roll_rate", "rad/s", "rad/s", frame="vehicle_body"),
+    ChannelSpec("Roll (_)", "vehicle.roll_angle", "deg", "deg", frame="vehicle_body"),
     ChannelSpec("VehLong_A_Actl (m/s^2)", "vehicle.ax", "m/s^2", "m/s^2", frame="vehicle_body"),
     ChannelSpec("VehLat_A_Actl (m/s^2)", "vehicle.ay", "m/s^2", "m/s^2", frame="vehicle_body"),
     ChannelSpec("VehVert_A_Actl (m/s^2)", "vehicle.az", "m/s^2", "m/s^2", frame="vehicle_body"),
@@ -97,6 +98,20 @@ def convert_channel_values(channel_name: str, values: Any) -> np.ndarray:
     if spec is None:
         return np.asarray(values, dtype=np.float64)
     return spec.convert(values)
+
+
+def channel_values_are_already_normalized(
+    channel_name: str,
+    payload: dict[str, Any],
+    canonical_name: str,
+    spec_source_name: str,
+) -> bool:
+    spec = SPEC_BY_SOURCE.get(spec_source_name)
+    if spec is None:
+        return False
+    if channel_name != canonical_name and payload.get("canonical_name") != canonical_name:
+        return False
+    return payload.get("unit") == spec.unit
 
 
 def channel_metadata(channel_name: str, source_name: str | None = None) -> dict[str, Any]:
@@ -212,7 +227,10 @@ def normalize_raw_json_schema(raw: dict[str, Any]) -> dict[str, Any]:
             canonical_name = canonical_name_for(spec_source_name)
 
         values = payload.get("values", [])
-        values = to_json_list(convert_channel_values(spec_source_name, values))
+        if channel_values_are_already_normalized(name, payload, canonical_name, spec_source_name):
+            values = to_json_list(values)
+        else:
+            values = to_json_list(convert_channel_values(spec_source_name, values))
         mapped_payload = dict(payload)
         mapped_payload.update(channel_metadata(canonical_name, spec_source_name))
         mapped_payload["source_name"] = source_name

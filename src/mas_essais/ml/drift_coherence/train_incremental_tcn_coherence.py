@@ -1376,7 +1376,7 @@ import torch
 from torch import nn
 from torch.utils.data import DataLoader, Dataset
 
-from dxd_schema import get_resampled_channels, get_time_values
+from mas_essais.domain.dxd_schema import get_resampled_channels, get_time_values
 
 
 # =============================================================================
