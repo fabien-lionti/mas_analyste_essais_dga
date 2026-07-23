@@ -31,18 +31,11 @@ BASE_DIR = PROJECT_ROOT
 
 JSON_ARTIFACTS = {
     "dataset_index": BASE_DIR / "dataset_index.json",
-    "correlation_anomaly_index": BASE_DIR / "correlation_anomaly_index.json",
-    "window_quality_summary": BASE_DIR / "window_quality_summary.json",
-    "window_cluster_summary": BASE_DIR / "window_cluster_summary.json",
-    "speed_day_summary": BASE_DIR / "speed_day_summary.json",
     "segment_dataset_index": BASE_DIR / "simple_maneuver_segments" / "dataset_index.json",
     "continuous_batch_summary": BASE_DIR / "trajectory_continuous_outputs" / "batch_summary.json",
 }
 
 CSV_TABLES = {
-    "window_quality_index": BASE_DIR / "window_quality_index.csv",
-    "window_cluster_index": BASE_DIR / "window_cluster_index.csv",
-    "speed_day_summary_rows": BASE_DIR / "speed_day_summary.csv",
     "segment_annotations": BASE_DIR / "manual_segment_annotations" / "segments_annotations.csv",
     "simple_maneuver_segments": BASE_DIR / "simple_maneuver_segments" / "segment_index.csv",
 }

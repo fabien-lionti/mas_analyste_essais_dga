@@ -29,16 +29,6 @@ index CSV/JSON et rendus de visualisation sont regenerables et ignores par Git.
   index de suivi.
 - `scripts/extract_features.py` : extraction de features univariees par fenetre
   depuis les JSON re-echantillonnes.
-- `build_window_quality_index.py` : calcule les scores de qualite et de
-  coherence physique par fenetre.
-- `build_window_cluster_index.py` : regroupe les fenetres comparables par
-  clustering DBSCAN sur des criteres dynamiques standardises.
-- `build_speed_day_summary.py` : agrege les scores de qualite par jour et classe
-  de vitesse.
-- `build_drift_index.py` : construit un index compact des features globales pour
-  les vues de derive.
-- `build_correlation_anomaly_index.py` : detecte des ruptures de relation entre
-  capteurs par type de piste.
 - `scripts/migrate_pipeline_to_sqlite.py` : migration des artefacts CSV/JSON
   vers `pipeline.sqlite`.
 - `static/index.html` : interface de consultation.
@@ -100,59 +90,7 @@ Les JSON contiennent les signaux re-echantillonnes a 100 Hz, les metadonnees de
 fichier, le statut d'ouverture, les canaux manquants et des features glissantes
 lorsqu'elles peuvent etre calculees.
 
-3. Calculer l'index de qualite par fenetre :
-
-```bash
-python build_window_quality_index.py
-```
-
-Options utiles :
-
-```bash
-python build_window_quality_index.py --window-sec 4 --stride-sec 1
-python build_window_quality_index.py --max-files 10
-```
-
-Sorties :
-
-- `window_quality_index.csv`
-- `window_quality_summary.json`
-
-5. Construire les clusters de fenetres comparables :
-
-```bash
-python build_window_cluster_index.py
-```
-
-Sorties :
-
-- `window_cluster_index.csv`
-- `window_cluster_summary.json`
-
-6. Agreger la qualite par jour et classe de vitesse :
-
-```bash
-python build_speed_day_summary.py
-```
-
-Sorties :
-
-- `speed_day_summary.csv`
-- `speed_day_summary.json`
-
-7. Construire les index de consultation :
-
-```bash
-python build_drift_index.py
-python build_correlation_anomaly_index.py
-```
-
-Sorties :
-
-- `drift_index.json`
-- `correlation_anomaly_index.json`
-
-8. Migrer les artefacts vers SQLite, si l'on veut utiliser une base unique pour
+3. Migrer les artefacts vers SQLite, si l'on veut utiliser une base unique pour
    l'application :
 
 ```bash
@@ -191,7 +129,6 @@ renvoient un message indiquant la commande a lancer.
 Endpoints principaux :
 
 - `GET /` : interface web.
-- `GET /api/health` : etat rapide de l'application et disponibilite des donnees.
 - `GET /api/files` : liste des fichiers exportes ou references dans
   `dataset_index.json`.
 - `GET /api/file/{json_name}/summary` : resume d'un export JSON.
@@ -199,14 +136,6 @@ Endpoints principaux :
 - `GET /api/file/{json_name}/series` : series temporelles pour un ou plusieurs
   canaux.
 - `GET /api/file/{json_name}/features/global` : features globales.
-- `GET /api/file/{json_name}/features/sliding` : features glissantes.
-- `GET /api/drift/options` et `GET /api/drift/global-feature` : vues de derive.
-- `GET /api/window-quality/summary` et `GET /api/window-quality` : index qualite.
-- `GET /api/speed-day-summary/summary` et `GET /api/speed-day-summary` :
-  aggregation qualite/vitesse/jour.
-- `GET /api/correlation-anomalies/summary` et
-  `GET /api/correlation-anomalies` : anomalies relationnelles entre capteurs.
-- `GET /api/correlation-baseline/{track_id}` : baseline d'une piste.
 
 ## Donnees et artefacts ignores
 
@@ -234,12 +163,6 @@ Les elements suivants ont ete supprimes car ils etaient locaux ou regenerables :
 - `viz_selected_windows/`
 - `vehicle_windows_2025_04_24_vx40_50hz/`
 - `selected_dxd_json_resampled/`
-- `drift_index.json`
-- `correlation_anomaly_index.json`
-- `window_quality_index.csv`
-- `window_quality_summary.json`
-- `speed_day_summary.csv`
-- `speed_day_summary.json`
 
 ## Notes de maintenance
 

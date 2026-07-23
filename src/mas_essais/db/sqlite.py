@@ -620,91 +620,6 @@ def table_columns(conn: sqlite3.Connection, table_name: str) -> set[str]:
     return {str(row["name"]) for row in rows}
 
 
-def read_window_quality_filtered(
-    db_path: Path | str = DEFAULT_DB_PATH,
-    *,
-    json_name: str | None = None,
-    maneuver_family: str | None = None,
-    cluster_id: str | None = None,
-    usable_for_regression: bool | None = None,
-    min_global_quality: float | None = None,
-    limit: int = 200,
-    sort: str = "quality",
-    columns: list[str] | None = None,
-) -> pd.DataFrame | None:
-    if not database_ready(db_path):
-        return None
-
-    with connect(db_path) as conn:
-        table_name = _first_existing_table(conn, ["window_cluster_index", "window_quality_index"])
-        if table_name is None:
-            return None
-
-        available_cols = table_columns(conn, table_name)
-        selected_cols = [c for c in (columns or sorted(available_cols)) if c in available_cols]
-        if not selected_cols:
-            selected_cols = sorted(available_cols)
-
-        where: list[str] = []
-        params: list[Any] = []
-        if json_name and "json_name" in available_cols:
-            where.append('"json_name" = ?')
-            params.append(json_name)
-        if maneuver_family and "maneuver_family" in available_cols:
-            where.append('"maneuver_family" = ?')
-            params.append(maneuver_family)
-        if cluster_id and "cluster_id" in available_cols:
-            if cluster_id == "noise" and "cluster_is_noise" in available_cols:
-                where.append('("cluster_is_noise" IN (1, "1", "True", "true"))')
-            else:
-                where.append('"cluster_id" = ?')
-                params.append(cluster_id)
-        if usable_for_regression is not None and "usable_for_regression" in available_cols:
-            if usable_for_regression:
-                where.append('("usable_for_regression" IN (1, "1", "True", "true"))')
-            else:
-                where.append('("usable_for_regression" IN (0, "0", "False", "false"))')
-        if min_global_quality is not None and "global_quality_score" in available_cols:
-            where.append('CAST("global_quality_score" AS REAL) >= ?')
-            params.append(float(min_global_quality))
-
-        order_by = _window_quality_order_by(sort, available_cols, bool(json_name))
-        sql = f'SELECT {", ".join(_quote(c) for c in selected_cols)} FROM "{table_name}"'
-        if where:
-            sql += " WHERE " + " AND ".join(where)
-        if order_by:
-            sql += " ORDER BY " + order_by
-        sql += " LIMIT ?"
-        params.append(max(1, min(int(limit), 50000)))
-        return pd.read_sql_query(sql, conn, params=params)
-
-
-def read_window_quality_series(
-    json_name: str,
-    db_path: Path | str = DEFAULT_DB_PATH,
-    *,
-    columns: list[str] | None = None,
-) -> pd.DataFrame | None:
-    if not database_ready(db_path):
-        return None
-    with connect(db_path) as conn:
-        table_name = _first_existing_table(conn, ["window_cluster_index", "window_quality_index"])
-        if table_name is None:
-            return None
-        available_cols = table_columns(conn, table_name)
-        if "json_name" not in available_cols:
-            return None
-        selected_cols = [c for c in (columns or sorted(available_cols)) if c in available_cols]
-        if not selected_cols:
-            selected_cols = sorted(available_cols)
-        order_by = '"window_start_sec" ASC' if "window_start_sec" in available_cols else '"json_name" ASC'
-        sql = (
-            f'SELECT {", ".join(_quote(c) for c in selected_cols)} '
-            f'FROM "{table_name}" WHERE "json_name" = ? ORDER BY {order_by}'
-        )
-        return pd.read_sql_query(sql, conn, params=[json_name])
-
-
 def create_common_indexes(conn: sqlite3.Connection, table_name: str, columns: Any) -> None:
     available = {str(c) for c in columns}
     indexed_columns = [
@@ -740,32 +655,6 @@ def _first_existing_table(conn: sqlite3.Connection, table_names: list[str]) -> s
 
 def _quote(identifier: str) -> str:
     return '"' + identifier.replace('"', '""') + '"'
-
-
-def _window_quality_order_by(sort: str, available_cols: set[str], has_json_filter: bool) -> str:
-    if sort == "time" and "window_start_sec" in available_cols:
-        cols = [c for c in ["date", "json_name", "window_start_sec"] if c in available_cols]
-        return ", ".join(f"{_quote(c)} ASC" for c in cols)
-    if sort == "speed_bin" and "speed_bin" in available_cols:
-        order = [
-            """CASE "speed_bin"
-                WHEN '0_20' THEN 0
-                WHEN '20_40' THEN 1
-                WHEN '40_60' THEN 2
-                WHEN '60_80' THEN 3
-                WHEN '80_100' THEN 4
-                WHEN '100_120' THEN 5
-                WHEN 'out_of_range' THEN 6
-                WHEN 'unknown' THEN 7
-                ELSE 99
-            END ASC"""
-        ]
-        order.extend(f"{_quote(c)} ASC" for c in ["date", "json_name", "window_start_sec"] if c in available_cols)
-        return ", ".join(order)
-    if has_json_filter and "window_start_sec" in available_cols:
-        return '"window_start_sec" ASC'
-    cols = [c for c in ["global_quality_score", "signal_quality_score"] if c in available_cols]
-    return ", ".join(f'CAST({_quote(c)} AS REAL) DESC' for c in cols)
 
 
 def _bool_to_int(value: Any) -> int | None:
