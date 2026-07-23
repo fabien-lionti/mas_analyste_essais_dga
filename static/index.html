@@ -86,11 +86,13 @@
     }
 
     body.catalogue-mode .sidebar,
-    body.validity-mode .sidebar {
+    body.validity-mode .sidebar,
+    body.channel-analysis-mode .sidebar {
       display: none;
     }
 
-    body.validity-mode .container {
+    body.validity-mode .container,
+    body.channel-analysis-mode .container {
       grid-template-columns: 1fr;
     }
 
@@ -245,11 +247,41 @@
       color: white;
     }
 
+    .subtabs {
+      display: flex;
+      gap: 8px;
+      margin: 8px 0 14px 0;
+      flex-wrap: wrap;
+    }
+
+    .subtab-btn {
+      width: auto;
+      min-width: 110px;
+      margin-bottom: 0;
+      background: var(--panel-2);
+      border-color: var(--border);
+      color: var(--text);
+    }
+
+    .subtab-btn.active {
+      background: var(--accent-2);
+      border-color: var(--accent-2);
+      color: white;
+    }
+
     .tab-panel {
       display: none;
     }
 
     .tab-panel.active {
+      display: block;
+    }
+
+    .export-subpanel {
+      display: none;
+    }
+
+    .export-subpanel.active {
       display: block;
     }
 
@@ -558,6 +590,7 @@
   <div class="app-brand">MAS Essais</div>
   <nav class="app-nav">
     <a href="/?view=validity" id="navValidity">Validité</a>
+    <a href="/?view=channels" id="navChannels">Canaux DXD</a>
     <a href="/?view=explorer" id="navExplorer" class="active">Données d'essais</a>
     <a href="/?view=rollover" id="navRollover">Retournement</a>
     <a href="/annotator" id="navAnnotator">Annotateur</a>
@@ -744,6 +777,123 @@
       </div>
     </div>
 
+    <div id="tab-channels" class="tab-panel">
+      <div class="card">
+        <h3>Analyse des canaux DXD</h3>
+        <div class="subtle">
+          Ouvre les fichiers `.dxd` et vérifie uniquement la présence des canaux cibles. Cette étape ne fait pas de resampling.
+        </div>
+        <div class="overview-grid" style="margin-top:12px;">
+          <div>
+            <label for="dxdChannelAnalysisNameInput">Nom de l'analyse</label>
+            <input id="dxdChannelAnalysisNameInput" type="text" placeholder="Structure DXD campagne">
+          </div>
+          <div>
+            <label for="dxdDataDirInput">Chemin du dossier campagne DXD</label>
+            <input id="dxdDataDirInput" type="text" value="data" placeholder="/chemin/vers/dxd">
+          </div>
+          <div class="kpi"><div class="kpi-label">Fichiers DXD</div><div class="kpi-value" id="dxdChannelFileCount">-</div></div>
+          <div class="kpi"><div class="kpi-label">Statut</div><div class="kpi-value" id="dxdChannelStatusKpi">-</div></div>
+          <div class="kpi"><div class="kpi-label">Traités</div><div class="kpi-value" id="dxdChannelProcessedKpi">-</div></div>
+          <div class="kpi"><div class="kpi-label">Erreurs</div><div class="kpi-value" id="dxdChannelErrorsKpi">-</div></div>
+        </div>
+        <div class="button-row" style="margin-top:12px;">
+          <button id="runDxdChannelAnalysisBtn" type="button">Lancer l'analyse des canaux</button>
+        </div>
+        <div id="dxdChannelAnalysisStatus" class="status"></div>
+      </div>
+
+      <div class="card">
+        <h3>Export JSON rééchantillonné</h3>
+        <div class="subtabs">
+          <button class="subtab-btn active" type="button" data-export-panel="dxdExportMainPanel">Export</button>
+          <button class="subtab-btn" type="button" data-export-panel="dxdExportOptionsPanel">Options</button>
+        </div>
+        <div id="dxdExportMainPanel" class="export-subpanel active">
+          <div class="overview-grid">
+            <div>
+              <label for="dxdAnalysisNameInput">Nom de l'analyse</label>
+              <input id="dxdAnalysisNameInput" type="text" placeholder="Campagne DGA juillet 2026">
+            </div>
+            <div>
+              <label>Canaux campagne</label>
+              <div class="kpi-value" id="dxdExportSelectedCount">0</div>
+            </div>
+          </div>
+          <div class="button-row" style="margin-top:12px;">
+            <button id="selectDxdExportPresetBtn" class="secondary" type="button">Sélectionner le preset</button>
+            <button id="selectAllDxdExportChannelsBtn" class="secondary" type="button">Tout sélectionner</button>
+            <button id="clearDxdExportChannelsBtn" class="secondary" type="button">Effacer</button>
+            <button id="runDxdJsonExportBtn" type="button">Exporter la campagne JSON</button>
+          </div>
+          <div id="dxdJsonExportStatus" class="status"></div>
+        </div>
+        <div id="dxdExportOptionsPanel" class="export-subpanel">
+          <div class="overview-grid">
+            <div>
+              <label for="dxdExportPresetSelect">Preset des canaux minimum</label>
+              <select id="dxdExportPresetSelect"></select>
+            </div>
+            <div>
+              <label for="dxdRecurrentFrequencyInput">Récurrence minimale</label>
+              <input id="dxdRecurrentFrequencyInput" type="number" value="0.80" min="0" max="1" step="0.05">
+            </div>
+            <div>
+              <label for="dxdExportHzInput">Fréquence d'échantillonnage (Hz)</label>
+              <input id="dxdExportHzInput" type="number" value="100" min="1" max="1000" step="1">
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>Résultats</h3>
+        <div class="table-wrap">
+          <table class="catalog-table">
+            <thead>
+              <tr>
+                <th>Fichier</th>
+                <th>Statut</th>
+                <th>Canaux</th>
+                <th>Cibles présentes</th>
+                <th>Cibles manquantes</th>
+                <th>Échantillonnage</th>
+                <th>Erreur</th>
+              </tr>
+            </thead>
+            <tbody id="dxdChannelAnalysisTableBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>Structure récurrente de la campagne</h3>
+        <div class="subtle" id="dxdChannelDetailStatus">Lance l'analyse des canaux pour identifier les canaux récurrents de la campagne.</div>
+        <label for="dxdChannelSearchInput">Filtrer les canaux</label>
+        <input id="dxdChannelSearchInput" type="text" placeholder="Nom ou unité...">
+        <div class="table-wrap" style="margin-top:12px;">
+          <table class="catalog-table">
+            <thead>
+              <tr>
+                <th>Export</th>
+                <th>#</th>
+                <th>Nom</th>
+                <th>Unité</th>
+                <th>Nom affiché</th>
+                <th>Récurrence</th>
+              </tr>
+            </thead>
+            <tbody id="dxdChannelDetailTableBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>Journal</h3>
+        <pre id="dxdChannelAnalysisLog" style="white-space:pre-wrap; margin:0; color:var(--text);"></pre>
+      </div>
+    </div>
+
     <div id="tab-rollover" class="tab-panel">
       <div class="card">
         <h3>Seuils d'encodage</h3>
@@ -868,6 +1018,13 @@
   let cachedRolloverPayload = null;
   let cachedRolloverAnalyses = [];
   let selectedRolloverAnalysisId = null;
+  let dxdChannelAnalysisPoll = null;
+  let cachedDxdChannelRows = [];
+  let cachedDxdSelectedChannels = [];
+  let cachedDxdRecurrentChannels = [];
+  let cachedDxdExportOptions = null;
+  let selectedDxdExportChannels = new Set();
+  let selectedDxdChannelFile = "";
   let syncState = { xMin: null, xMax: null };
   let isSyncing = false;
 
@@ -899,6 +1056,7 @@
 
   function setActiveNav(view) {
     document.getElementById("navValidity").classList.toggle("active", view === "validity");
+    document.getElementById("navChannels").classList.toggle("active", view === "channels");
     document.getElementById("navExplorer").classList.toggle("active", view === "explorer");
     document.getElementById("navRollover").classList.toggle("active", view === "rollover");
   }
@@ -1457,8 +1615,19 @@
 
     document.body.classList.toggle("catalogue-mode", tabId === "tab-catalogue");
     document.body.classList.toggle("validity-mode", tabId === "tab-validity");
+    document.body.classList.toggle("channel-analysis-mode", tabId === "tab-channels");
     document.body.classList.toggle("rollover-mode", tabId === "tab-rollover");
-    setActiveNav(tabId === "tab-validity" ? "validity" : (tabId === "tab-rollover" ? "rollover" : "explorer"));
+    setActiveNav(
+      tabId === "tab-validity" ? "validity" :
+      (tabId === "tab-channels" ? "channels" : (tabId === "tab-rollover" ? "rollover" : "explorer"))
+    );
+
+    if (tabId === "tab-channels") {
+      loadDxdExportOptions().catch(err => {
+        document.getElementById("dxdJsonExportStatus").textContent = `Erreur presets export: ${err.message || err}`;
+      });
+      loadDxdChannelAnalysisStatus();
+    }
 
     window.dispatchEvent(new Event("resize"));
 
@@ -2084,6 +2253,362 @@
     ]);
   }
 
+  function dxdChannelKeys(channel) {
+    return [
+      channel.channel,
+      channel.name,
+      channel.display_name,
+      channel.canonical_name,
+      channel.source_name
+    ].filter(Boolean).map(value => String(value));
+  }
+
+  function selectedDxdExportChannelList() {
+    return Array.from(selectedDxdExportChannels);
+  }
+
+  function updateDxdExportSelectedCount() {
+    const el = document.getElementById("dxdExportSelectedCount");
+    if (el) el.textContent = String(selectedDxdExportChannels.size);
+  }
+
+  async function loadDxdExportOptions() {
+    const minFrequency = Number(document.getElementById("dxdRecurrentFrequencyInput")?.value || 0.8);
+    const data = await fetchJSON("/api/dxd-channel-analysis/export-options");
+    const recurrent = await fetchJSON(`/api/dxd-channel-analysis/recurrent-channels?min_frequency=${encodeURIComponent(minFrequency)}`);
+    data.recurrent = recurrent;
+    if (data.presets?.recurrent) {
+      data.presets.recurrent.channels = (recurrent.channels || []).map(row => row.channel);
+    }
+    cachedDxdExportOptions = data;
+    cachedDxdRecurrentChannels = recurrent.channels || [];
+    const select = document.getElementById("dxdExportPresetSelect");
+    const previousValue = select.value || "minimum";
+    if (select.options.length === 0) {
+      Object.entries(data.presets || {}).forEach(([key, preset]) => {
+        const opt = document.createElement("option");
+        opt.value = key;
+        opt.textContent = preset.label || key;
+        opt.title = preset.description || "";
+        select.appendChild(opt);
+      });
+    }
+    if (data.presets?.[previousValue]) select.value = previousValue;
+    if (data.default_hz) {
+      document.getElementById("dxdExportHzInput").value = String(data.default_hz);
+    }
+    renderDxdChannelDetail();
+    return data;
+  }
+
+  function applyDxdExportPreset() {
+    const presetKey = document.getElementById("dxdExportPresetSelect").value || "minimum";
+    const preset = cachedDxdExportOptions?.presets?.[presetKey];
+    const presetChannels = new Set((preset?.channels || []).map(value => String(value)));
+    selectedDxdExportChannels = new Set();
+    cachedDxdRecurrentChannels.forEach((channel) => {
+      const keys = dxdChannelKeys(channel);
+      if (keys.some(key => presetChannels.has(key))) {
+        selectedDxdExportChannels.add(channel.channel || channel.display_name || channel.name);
+      }
+    });
+    updateDxdExportSelectedCount();
+    renderDxdChannelDetail();
+  }
+
+  async function selectDxdExportPreset() {
+    await loadDxdExportOptions();
+    applyDxdExportPreset();
+    const presetKey = document.getElementById("dxdExportPresetSelect").value || "minimum";
+    const preset = cachedDxdExportOptions?.presets?.[presetKey];
+    const count = selectedDxdExportChannels.size;
+    document.getElementById("dxdJsonExportStatus").textContent = count > 0
+      ? `${count} canal(aux) sélectionné(s) avec le preset ${preset?.label || presetKey}.`
+      : `Aucun canal récurrent de la campagne ne correspond au preset ${preset?.label || presetKey}.`;
+  }
+
+  function selectAllDxdExportChannels() {
+    selectedDxdExportChannels = new Set(
+      cachedDxdRecurrentChannels.map(channel => channel.channel || channel.display_name || channel.name).filter(Boolean)
+    );
+    updateDxdExportSelectedCount();
+    renderDxdChannelDetail();
+  }
+
+  function clearDxdExportChannels() {
+    selectedDxdExportChannels = new Set();
+    updateDxdExportSelectedCount();
+    renderDxdChannelDetail();
+  }
+
+  function toggleDxdExportChannel(channelName, checked) {
+    if (!channelName) return;
+    if (checked) selectedDxdExportChannels.add(channelName);
+    else selectedDxdExportChannels.delete(channelName);
+    updateDxdExportSelectedCount();
+  }
+
+  async function runDxdJsonExport() {
+    const statusEl = document.getElementById("dxdJsonExportStatus");
+    const button = document.getElementById("runDxdJsonExportBtn");
+    const channels = selectedDxdExportChannelList();
+    const analysisName = document.getElementById("dxdAnalysisNameInput").value.trim();
+    if (!analysisName) {
+      statusEl.textContent = "Renseigne un nom d'analyse avant de lancer l'export.";
+      document.getElementById("dxdAnalysisNameInput").focus();
+      return;
+    }
+    if (channels.length === 0) {
+      statusEl.textContent = "Sélectionne au moins un canal récurrent à exporter.";
+      return;
+    }
+    const previous = button.textContent;
+    button.disabled = true;
+    button.textContent = "Export en cours...";
+    statusEl.textContent = "Export JSON de la campagne en cours...";
+    try {
+      const response = await fetch("/api/dxd-channel-analysis/export-json", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          analysis_name: analysisName,
+          target_hz: Number(document.getElementById("dxdExportHzInput").value || 100),
+          channels
+        })
+      });
+      if (!response.ok) {
+        const text = await response.text();
+        throw new Error(text || `HTTP ${response.status}`);
+      }
+      const result = await response.json();
+      statusEl.textContent = [
+        result.status === "started" ? "Export lancé en arrière-plan." : `Statut: ${result.status}`,
+        result.analysis_id ? `Analyse: ${result.analysis_id}` : "",
+        `Fichiers: ${result.total_files ?? "-"}`,
+        `Sortie: ${result.output_dir || "selected_dxd_json_resampled"}`
+      ].filter(Boolean).join("\n");
+      pollDxdJsonExportStatus();
+      await loadFiles();
+      populateFileSelect();
+    } catch (err) {
+      console.error("runDxdJsonExport error:", err);
+      statusEl.textContent = `Erreur export JSON: ${err.message || err}`;
+    } finally {
+      button.disabled = false;
+      button.textContent = previous;
+    }
+  }
+
+  async function pollDxdJsonExportStatus() {
+    const statusEl = document.getElementById("dxdJsonExportStatus");
+    try {
+      const data = await fetchJSON("/api/dxd-channel-analysis/export-status");
+      const progress = data.progress || {};
+      statusEl.textContent = [
+        `Statut export: ${progress.status || "-"}`,
+        progress.analysis_id ? `Analyse: ${progress.analysis_id}` : "",
+        `Fichiers: ${progress.processed_files ?? 0}/${progress.total_files ?? "-"}`,
+        progress.current_file ? `Fichier courant: ${progress.current_file}` : "",
+        progress.exported_files != null ? `JSON écrits: ${progress.exported_files}` : "",
+        progress.error_files != null ? `Erreurs: ${progress.error_files}` : "",
+        progress.output_dir ? `Sortie: ${progress.output_dir}` : ""
+      ].filter(Boolean).join("\n");
+      if (progress.status === "running") {
+        setTimeout(pollDxdJsonExportStatus, 2500);
+      } else if (progress.status === "finished") {
+        await loadFiles();
+        populateFileSelect();
+      }
+    } catch (err) {
+      statusEl.textContent = `Erreur suivi export: ${err.message || err}`;
+    }
+  }
+
+  function getDxdChannelAnalysisOptions() {
+    return {
+      data_dir: document.getElementById("dxdDataDirInput").value.trim() || "data",
+      channel_preset: "app_default",
+      normalize_names: true
+    };
+  }
+
+  function activateDxdExportPanel(panelId) {
+    document.querySelectorAll("[data-export-panel]").forEach(btn => {
+      btn.classList.toggle("active", btn.dataset.exportPanel === panelId);
+    });
+    document.querySelectorAll(".export-subpanel").forEach(panel => {
+      panel.classList.toggle("active", panel.id === panelId);
+    });
+  }
+
+  async function loadDxdChannelAnalysisStatus({ poll = false } = {}) {
+    const statusEl = document.getElementById("dxdChannelAnalysisStatus");
+    const tableBody = document.getElementById("dxdChannelAnalysisTableBody");
+    const logEl = document.getElementById("dxdChannelAnalysisLog");
+    const options = getDxdChannelAnalysisOptions();
+    try {
+      const [filesData, statusData] = await Promise.all([
+        fetchJSONOrNull(`/api/dxd-channel-analysis/files?data_dir=${encodeURIComponent(options.data_dir)}`),
+        fetchJSON("/api/dxd-channel-analysis/status")
+      ]);
+      const progress = statusData.progress || {};
+      const rows = statusData.items || [];
+      cachedDxdChannelRows = rows;
+      document.getElementById("dxdChannelFileCount").textContent = filesData?.items?.length ?? "-";
+      document.getElementById("dxdChannelStatusKpi").textContent = progress.status || "-";
+      document.getElementById("dxdChannelProcessedKpi").textContent =
+        `${progress.processed_files ?? 0}/${progress.total_files ?? filesData?.items?.length ?? "-"}`;
+      document.getElementById("dxdChannelErrorsKpi").textContent = progress.error_files ?? "-";
+      statusEl.textContent = [
+        progress.analysis_name ? `Analyse: ${progress.analysis_name}` : "",
+        progress.analysis_id ? `ID analyse: ${progress.analysis_id}` : "",
+        progress.data_dir ? `Dossier: ${progress.data_dir}` : "",
+        progress.channel_preset ? `Preset: ${progress.channel_preset}` : "",
+        progress.output_csv ? `Sortie: ${progress.output_csv}` : "",
+        progress.current_file ? `Fichier courant: ${progress.current_file}` : "",
+        progress.message ? `Message: ${progress.message}` : ""
+      ].filter(Boolean).join("\n");
+      logEl.textContent = progress.log_tail || "";
+
+      tableBody.innerHTML = "";
+      if (rows.length === 0) {
+        tableBody.innerHTML = `<tr><td colspan="7">Aucun résultat disponible. Lance l'analyse des canaux.</td></tr>`;
+      } else {
+        rows.forEach(row => {
+          const tr = document.createElement("tr");
+          if (row.status === "error") tr.classList.add("problem-row");
+          if (row.file === selectedDxdChannelFile) tr.classList.add("selected-row");
+          tr.innerHTML = `
+            <td title="${escapeHtml(row.path || row.file || "")}">${escapeHtml(row.file || "-")}</td>
+            <td>${escapeHtml(row.status || "-")}</td>
+            <td>${escapeHtml(row.n_channels ?? "-")}</td>
+            <td>${escapeHtml(row.present_target_count ?? "-")} / ${escapeHtml(row.target_count ?? "-")}</td>
+            <td title="${escapeHtml(row.missing_targets || "")}">${escapeHtml(row.missing_target_count ?? "-")}</td>
+            <td>${escapeHtml(row.sample_rate ?? "-")}</td>
+            <td title="${escapeHtml(row.error || "")}">${escapeHtml(row.error || "")}</td>
+          `;
+          tr.addEventListener("click", () => loadDxdChannelDetail(row.file));
+          tableBody.appendChild(tr);
+        });
+      }
+
+      if (progress.status === "running" && poll && !dxdChannelAnalysisPoll) {
+        dxdChannelAnalysisPoll = setInterval(() => loadDxdChannelAnalysisStatus({ poll: true }), 2500);
+      }
+      if (progress.status !== "running" && dxdChannelAnalysisPoll) {
+        clearInterval(dxdChannelAnalysisPoll);
+        dxdChannelAnalysisPoll = null;
+        cachedDxdExportOptions = null;
+        await loadDxdExportOptions();
+      }
+    } catch (err) {
+      console.error("loadDxdChannelAnalysisStatus error:", err);
+      statusEl.textContent = `Erreur analyse canaux: ${err.message || err}`;
+    }
+  }
+
+  async function runDxdChannelAnalysis() {
+    const button = document.getElementById("runDxdChannelAnalysisBtn");
+    const previous = button.textContent;
+    const analysisName = document.getElementById("dxdChannelAnalysisNameInput").value.trim();
+    const options = getDxdChannelAnalysisOptions();
+    button.disabled = true;
+    button.textContent = "Analyse en cours...";
+    try {
+      const response = await fetch("/api/dxd-channel-analysis/run", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          analysis_name: analysisName,
+          data_dir: options.data_dir,
+          channel_preset: options.channel_preset,
+          normalize_names: options.normalize_names
+        })
+      });
+      if (!response.ok) {
+        const text = await response.text();
+        throw new Error(text || `HTTP ${response.status}`);
+      }
+      await loadDxdChannelAnalysisStatus({ poll: true });
+    } catch (err) {
+      console.error("runDxdChannelAnalysis error:", err);
+      document.getElementById("dxdChannelAnalysisStatus").textContent = `Erreur lancement: ${err.message || err}`;
+    } finally {
+      button.disabled = false;
+      button.textContent = previous;
+    }
+  }
+
+  async function loadDxdChannelDetail(fileName) {
+    if (!fileName) return;
+    selectedDxdChannelFile = fileName;
+    const statusEl = document.getElementById("dxdChannelDetailStatus");
+    const body = document.getElementById("dxdChannelDetailTableBody");
+    statusEl.textContent = `Chargement des canaux de ${fileName}...`;
+    body.innerHTML = `<tr><td colspan="6">Chargement...</td></tr>`;
+    try {
+      await loadDxdExportOptions();
+      const options = getDxdChannelAnalysisOptions();
+      const params = new URLSearchParams({
+        data_dir: options.data_dir,
+        channel_preset: options.channel_preset,
+        normalize_names: String(options.normalize_names)
+      });
+      const data = await fetchJSON(`/api/dxd-channel-analysis/channels/${encodeURIComponent(fileName)}?${params.toString()}`);
+      cachedDxdSelectedChannels = data.channels || [];
+      applyDxdExportPreset();
+      statusEl.textContent = `${fileName} - ${cachedDxdSelectedChannels.length} canal(aux), statut ${data.status || "ok"}.`;
+      renderDxdChannelDetail();
+      renderDxdChannelAnalysisTableSelection();
+    } catch (err) {
+      console.error("loadDxdChannelDetail error:", err);
+      cachedDxdSelectedChannels = [];
+      statusEl.textContent = `Erreur détail canaux: ${err.message || err}`;
+      body.innerHTML = `<tr><td colspan="6">Erreur de chargement.</td></tr>`;
+    }
+  }
+
+  function renderDxdChannelAnalysisTableSelection() {
+    const rows = document.querySelectorAll("#dxdChannelAnalysisTableBody tr");
+    rows.forEach((tr) => {
+      const fileCell = tr.querySelector("td");
+      tr.classList.toggle("selected-row", fileCell && fileCell.textContent === selectedDxdChannelFile);
+    });
+  }
+
+  function renderDxdChannelDetail() {
+    const body = document.getElementById("dxdChannelDetailTableBody");
+    const q = (document.getElementById("dxdChannelSearchInput").value || "").toLowerCase().trim();
+    const rows = cachedDxdRecurrentChannels.filter((channel) => {
+      if (!q) return true;
+      return [channel.channel, channel.name, channel.unit, channel.display_name, channel.canonical_name]
+        .some(value => String(value || "").toLowerCase().includes(q));
+    });
+    if (rows.length === 0) {
+      body.innerHTML = `<tr><td colspan="6">Aucun canal récurrent à afficher. Lance ou rafraîchis l'analyse des canaux.</td></tr>`;
+      return;
+    }
+    body.innerHTML = "";
+    rows.forEach((channel, index) => {
+      const tr = document.createElement("tr");
+      const exportName = channel.channel || channel.display_name || channel.name || "";
+      const checked = selectedDxdExportChannels.has(exportName) ? "checked" : "";
+      const frequency = Number(channel.frequency || 0);
+      tr.innerHTML = `
+        <td><input class="dxd-export-channel-checkbox" type="checkbox" data-channel="${escapeHtml(exportName)}" ${checked}></td>
+        <td>${index + 1}</td>
+        <td>${escapeHtml(channel.name || "-")}</td>
+        <td>${escapeHtml(channel.unit || "-")}</td>
+        <td title="${escapeHtml(channel.canonical_name || "")}">${escapeHtml(channel.display_name || channel.channel || "-")}</td>
+        <td>${escapeHtml(channel.file_count ?? "-")} / ${escapeHtml(channel.total_files ?? "-")} (${escapeHtml((frequency * 100).toFixed(0))}%)</td>
+      `;
+      tr.querySelector(".dxd-export-channel-checkbox").addEventListener("change", (event) => {
+        toggleDxdExportChannel(exportName, event.target.checked);
+      });
+      body.appendChild(tr);
+    });
+  }
+
   function buildRolloverAnalysisPayload(extra = {}) {
     return {
       json_name: getCurrentJsonName(),
@@ -2464,6 +2989,49 @@
     await createRolloverAnalysisVersion();
   });
 
+  document.getElementById("runDxdChannelAnalysisBtn").addEventListener("click", async () => {
+    await runDxdChannelAnalysis();
+  });
+
+  document.getElementById("dxdDataDirInput").addEventListener("change", async () => {
+    await loadDxdChannelAnalysisStatus();
+  });
+
+  document.querySelectorAll("[data-export-panel]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      activateDxdExportPanel(btn.dataset.exportPanel);
+    });
+  });
+
+  document.getElementById("selectDxdExportPresetBtn").addEventListener("click", async () => {
+    await selectDxdExportPreset();
+  });
+
+  document.getElementById("dxdExportPresetSelect").addEventListener("change", async () => {
+    await selectDxdExportPreset();
+  });
+
+  document.getElementById("dxdRecurrentFrequencyInput").addEventListener("change", async () => {
+    cachedDxdExportOptions = null;
+    await selectDxdExportPreset();
+  });
+
+  document.getElementById("selectAllDxdExportChannelsBtn").addEventListener("click", () => {
+    selectAllDxdExportChannels();
+  });
+
+  document.getElementById("clearDxdExportChannelsBtn").addEventListener("click", () => {
+    clearDxdExportChannels();
+  });
+
+  document.getElementById("runDxdJsonExportBtn").addEventListener("click", async () => {
+    await runDxdJsonExport();
+  });
+
+  document.getElementById("dxdChannelSearchInput").addEventListener("input", () => {
+    renderDxdChannelDetail();
+  });
+
   document.getElementById("prevBtn").addEventListener("click", async () => {
     await goToRelativeFile(-1);
   });
@@ -2502,7 +3070,10 @@
       if (segmentSource && document.getElementById("segmentSourceSelect").querySelector(`option[value="${segmentSource}"]`)) {
         document.getElementById("segmentSourceSelect").value = segmentSource;
       }
-      activateTab(view === "validity" ? "tab-validity" : (view === "rollover" ? "tab-rollover" : "tab-detail"));
+      activateTab(
+        view === "validity" ? "tab-validity" :
+        (view === "channels" ? "tab-channels" : (view === "rollover" ? "tab-rollover" : "tab-detail"))
+      );
       await loadValiditySideData();
       await loadFiles();
       await refreshAllViews();

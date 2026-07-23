@@ -9,6 +9,8 @@ import io
 import sqlite3
 import subprocess
 import sys
+import time
+from collections import Counter, defaultdict
 from datetime import datetime
 from functools import lru_cache
 
@@ -20,17 +22,27 @@ from fastapi.staticfiles import StaticFiles
 from dotenv import load_dotenv
 
 from mas_essais.domain.dxd_schema import (
+    CHANNEL_SPECS,
+    SPEC_BY_SOURCE,
+    canonical_name_for,
     channel_sort_key,
+    channel_metadata,
     get_resampled_channels,
     get_time_values,
     normalize_feature_schema,
     normalize_raw_json_schema,
+    source_name_for,
+    to_json_list,
 )
 from mas_essais.db.sqlite import (
     DEFAULT_DB_PATH,
     connect as connect_pipeline_db,
+    create_pipeline_analysis,
     database_ready,
+    ensure_analysis_tables,
+    get_pipeline_analysis,
     list_file_catalog,
+    list_pipeline_analyses,
     read_dataframe_table,
     read_json_artifact,
     read_resampled_json,
@@ -38,7 +50,10 @@ from mas_essais.db.sqlite import (
     read_segment_annotations_filtered,
     read_window_quality_filtered,
     read_window_quality_series,
+    update_pipeline_analysis,
     write_dataframe_table,
+    write_analysis_artifact,
+    write_resampled_json_export,
 )
 from mas_essais.analysis.retournement import (
     ProviderRateLimitError,
@@ -54,6 +69,7 @@ from mas_essais.analysis.retournement import (
     get_dernieres_analyses,
     save_analyse_retournement,
 )
+from mas_essais.io.dxd_reader import open as open_dxd
 from mas_essais.ml.segment_cnn.model import MODEL_METADATA_PATH, MODEL_SUMMARY_PATH, MODEL_WEIGHTS_PATH, Simple1DCNN, load_model_summary, predict_file, generate_active_learning_cache, MODEL_PROGRESS_PATH, MODEL_DIR, write_json_atomic
 from mas_essais.paths import PROJECT_ROOT
 
@@ -75,6 +91,13 @@ WINDOW_CLUSTER_INDEX_PATH = BASE_DIR / "window_cluster_index.csv"
 WINDOW_CLUSTER_SUMMARY_PATH = BASE_DIR / "window_cluster_summary.json"
 SPEED_DAY_SUMMARY_PATH = BASE_DIR / "speed_day_summary.csv"
 SPEED_DAY_SUMMARY_JSON_PATH = BASE_DIR / "speed_day_summary.json"
+CHANNEL_ANALYSIS_PROGRESS_PATH = BASE_DIR / "channel_analysis_progress.json"
+CHANNEL_ANALYSIS_LOG_PATH = BASE_DIR / "channel_analysis.log"
+CHANNEL_PRESENCE_PATH = BASE_DIR / "channel_presence.csv"
+CHANNEL_ANALYSIS_DETAILS_PATH = BASE_DIR / "channel_analysis_details.json"
+CHANNEL_ANALYSIS_STALE_AFTER_SECONDS = 10 * 60
+DXD_EXPORT_PROGRESS_PATH = BASE_DIR / "dxd_json_export_progress.json"
+DEFAULT_DXD_EXPORT_HZ = 100.0
 DRIFT_COHERENCE_TRAIN_PROGRESS_PATH = ANNOTATION_DIR / "drift_coherence_training_progress.json"
 DRIFT_COHERENCE_TRAIN_LOG_PATH = ANNOTATION_DIR / "drift_coherence_training.log"
 DRIFT_RUN_PREFIXES = ("dynamic_channel_coherence",)
@@ -121,6 +144,65 @@ EXPLORATION_SIGNALS = [
     {"value": "WheelSteer_S2 (_)", "label": "steer S2"},
 ]
 
+ANNOTATOR_DXD_CHANNELS = [
+    "vehicle.vx",
+    "vehicle.speed",
+    "vehicle.ax",
+    "vehicle.ay",
+    "vehicle.yaw_rate",
+    "gps.latitude",
+    "gps.longitude",
+    "WheelSteer_S1 (_)",
+    "WheelSteer_S2 (_)",
+    "WhlDirFl_D_Actl (-)",
+    "WhlDirFr_D_Actl (-)",
+]
+
+ROLLOVER_DXD_CHANNELS = [
+    "vehicle.vx",
+    "vehicle.vy",
+    "vehicle.ax",
+    "vehicle.ay",
+    "vehicle.roll_angle",
+]
+
+MINIMUM_DXD_CHANNELS = [
+    "vehicle.vx",
+    "vehicle.vy",
+    "vehicle.speed",
+    "vehicle.ax",
+    "vehicle.ay",
+    "vehicle.yaw_rate",
+    "vehicle.roll_angle",
+    "gps.latitude",
+    "gps.longitude",
+    "WheelSteer_S1 (_)",
+    "WheelSteer_S2 (_)",
+]
+
+DRIFT_DXD_CHANNELS = [
+    "vehicle.vx",
+    "vehicle.ax",
+    "vehicle.ay",
+    "vehicle.yaw_rate",
+    "gps.latitude",
+    "gps.longitude",
+    "gps.speed",
+    "WheelSteer_S1 (_)",
+    "WheelSteer_S2 (_)",
+]
+
+APP_DEFAULT_DXD_CHANNELS = tuple(
+    dict.fromkeys(
+        [
+            *(spec.canonical_name for spec in CHANNEL_SPECS),
+            *ANNOTATOR_DXD_CHANNELS,
+            *ROLLOVER_DXD_CHANNELS,
+            *DRIFT_DXD_CHANNELS,
+        ]
+    )
+)
+
 
 # ------------------------------------------------------------------
 # Helpers
@@ -129,6 +211,26 @@ EXPLORATION_SIGNALS = [
 def load_json(path: Path) -> dict:
     with open(path, "r", encoding="utf-8") as f:
         return json.load(f)
+
+
+def mark_stale_channel_analysis_progress(progress: dict[str, Any]) -> dict[str, Any]:
+    if progress.get("status") != "running" or not CHANNEL_ANALYSIS_PROGRESS_PATH.exists():
+        return progress
+    try:
+        age_s = time.time() - CHANNEL_ANALYSIS_PROGRESS_PATH.stat().st_mtime
+    except OSError:
+        return progress
+    if age_s <= CHANNEL_ANALYSIS_STALE_AFTER_SECONDS:
+        return progress
+
+    stale = dict(progress)
+    stale["status"] = "stale"
+    stale["message"] = (
+        "La dernière analyse a été interrompue ou le serveur a redémarré. "
+        "Tu peux relancer l'analyse des canaux."
+    )
+    stale["stale_after_seconds"] = CHANNEL_ANALYSIS_STALE_AFTER_SECONDS
+    return stale
 
 
 def json_safe_value(v: Any):
@@ -439,6 +541,746 @@ def list_json_files() -> list[dict]:
         }
         for path in sorted(DXD_DATA_DIR.glob("*.dxd"))
     ]
+
+
+def resolve_dxd_data_dir(value: Any = None) -> Path:
+    raw = str(value or "").strip()
+    path = Path(raw).expanduser() if raw else DXD_DATA_DIR
+    if not path.is_absolute():
+        path = (BASE_DIR / path).resolve()
+    if not path.exists() or not path.is_dir():
+        raise HTTPException(status_code=400, detail=f"DXD directory not found: {path}")
+    return path
+
+
+def list_dxd_files(data_dir: Path | str | None = None) -> list[dict[str, Any]]:
+    dxd_dir = resolve_dxd_data_dir(data_dir)
+    if not dxd_dir.exists():
+        return []
+    items: list[dict[str, Any]] = []
+    for path in sorted(dxd_dir.glob("*.dxd")):
+        stat = path.stat()
+        items.append(
+            {
+                "file": path.name,
+                "path": str(path),
+                "size_mb": stat.st_size / (1024 * 1024),
+                "modified_at": datetime.fromtimestamp(stat.st_mtime).isoformat(timespec="seconds"),
+            }
+        )
+    return items
+
+
+def channel_structure_names(preset: str | None = None) -> list[str]:
+    presets = channel_export_presets()
+    key = str(preset or "app_default")
+    if key == "recurrent":
+        key = "app_default"
+    channels = presets.get(key, presets["app_default"]).get("channels") or []
+    return list(dict.fromkeys(str(channel) for channel in channels if str(channel).strip()))
+
+
+def summarize_dxd_channels(
+    path: Path,
+    *,
+    channel_preset: str | None = None,
+    normalize_names: bool = True,
+) -> dict[str, Any]:
+    target_channels = channel_structure_names(channel_preset)
+    with open_dxd(path) as reader:
+        channels = list(reader)
+        channel_rows = [
+            {
+                "name": channel.name,
+                "unit": channel.unit,
+                "display_name": str(channel),
+                "canonical_name": canonical_name_for(str(channel)),
+                "source_name": str(channel),
+                "array_size": channel.array_size,
+            }
+            for channel in channels
+        ]
+        available_names = {row["name"] for row in channel_rows}
+        available_display_names = {row["display_name"] for row in channel_rows}
+        available_canonical = {row["canonical_name"] for row in channel_rows}
+        available = available_names | available_display_names | available_canonical
+        missing = [
+            channel
+            for channel in target_channels
+            if not any(candidate in available for candidate in source_candidates_for_export_name(channel))
+        ]
+        present = [
+            channel
+            for channel in target_channels
+            if any(candidate in available for candidate in source_candidates_for_export_name(channel))
+        ]
+        display_present = [canonical_name_for(ch) if normalize_names else source_name_for(ch) for ch in present]
+        display_missing = [canonical_name_for(ch) if normalize_names else source_name_for(ch) for ch in missing]
+        return {
+            "file": path.name,
+            "path": str(path),
+            "status": "ok",
+            "sample_rate": reader.sample_rate,
+            "n_channels": len(channel_rows),
+            "present_target_count": len(present),
+            "missing_target_count": len(missing),
+            "target_count": len(target_channels),
+            "missing_targets": display_missing,
+            "present_targets": display_present,
+            "channels": channel_rows,
+            "channel_preset": channel_preset or "app_default",
+            "normalize_names": bool(normalize_names),
+        }
+
+
+def enrich_dxd_channel_rows(channels: Sequence[dict[str, Any]]) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    for channel in channels:
+        row = dict(channel)
+        display_name = str(row.get("display_name") or "")
+        name = str(row.get("name") or "")
+        lookup_name = display_name if display_name in SPEC_BY_SOURCE else name
+        row.setdefault("source_name", display_name or name)
+        row.setdefault("canonical_name", canonical_name_for(lookup_name))
+        out.append(row)
+    return out
+
+
+def summarize_dxd_channels_with_timeout(
+    path: Path,
+    timeout_sec: float = 30.0,
+    *,
+    channel_preset: str | None = None,
+    normalize_names: bool = True,
+) -> dict[str, Any]:
+    del timeout_sec
+    return summarize_dxd_channels(path, channel_preset=channel_preset, normalize_names=normalize_names)
+
+
+def channel_export_presets() -> dict[str, dict[str, Any]]:
+    return {
+        "minimum": {
+            "label": "Canaux minimum",
+            "description": "Socle minimal pour exploration, annotation, retournement et premières anomalies.",
+            "channels": MINIMUM_DXD_CHANNELS,
+        },
+        "recurrent": {
+            "label": "Récurrents campagne",
+            "description": "Canaux présents dans la majorité des DXD analysés pour la campagne.",
+            "channels": [],
+        },
+        "app_default": {
+            "label": "Défaut application",
+            "description": "Canaux utilisés par les vues données d'essais, retournement, annotateur, qualité et drift.",
+            "channels": list(APP_DEFAULT_DXD_CHANNELS),
+        },
+        "annotator": {
+            "label": "Annotateur",
+            "description": "Signaux nécessaires à l'annotateur de segments.",
+            "channels": ANNOTATOR_DXD_CHANNELS,
+        },
+        "rollover": {
+            "label": "Retournement",
+            "description": "Signaux nécessaires à la vue LTR et à l'analyse retournement.",
+            "channels": ROLLOVER_DXD_CHANNELS,
+        },
+        "all_canonical": {
+            "label": "Tous canaux métier",
+            "description": "Tous les canaux déclarés dans le schéma canonique.",
+            "channels": [spec.canonical_name for spec in CHANNEL_SPECS],
+        },
+    }
+
+
+def load_channel_analysis_details() -> dict[str, Any]:
+    if not CHANNEL_ANALYSIS_DETAILS_PATH.exists():
+        return {}
+    try:
+        return load_json(CHANNEL_ANALYSIS_DETAILS_PATH)
+    except Exception:
+        return {}
+
+
+def channel_campaign_key(channel: dict[str, Any]) -> str:
+    return str(channel.get("display_name") or channel.get("source_name") or channel.get("name") or "").strip()
+
+
+def recurrent_campaign_channels(min_frequency: float = 0.8) -> dict[str, Any]:
+    threshold = max(0.0, min(float(min_frequency), 1.0))
+    details = load_channel_analysis_details()
+    ok_items = [item for item in details.values() if item.get("status") == "ok"]
+    total_files = len(ok_items)
+    if total_files == 0:
+        return {
+            "status": "missing",
+            "message": "Lance d'abord l'analyse des canaux DXD pour construire la structure de campagne.",
+            "total_files": 0,
+            "min_frequency": threshold,
+            "channels": [],
+        }
+
+    counts: Counter[str] = Counter()
+    examples: dict[str, dict[str, Any]] = {}
+    units: dict[str, Counter[str]] = defaultdict(Counter)
+    names: dict[str, Counter[str]] = defaultdict(Counter)
+    for item in ok_items:
+        seen: set[str] = set()
+        for channel in enrich_dxd_channel_rows(item.get("channels") or []):
+            key = channel_campaign_key(channel)
+            if not key or key in seen:
+                continue
+            seen.add(key)
+            counts[key] += 1
+            examples.setdefault(key, channel)
+            units[key][str(channel.get("unit") or "")] += 1
+            names[key][str(channel.get("name") or key)] += 1
+
+    rows: list[dict[str, Any]] = []
+    min_count = int(np.ceil(total_files * threshold))
+    for key, count in counts.items():
+        if count < min_count:
+            continue
+        example = examples.get(key, {})
+        rows.append(
+            {
+                "channel": key,
+                "display_name": key,
+                "name": names[key].most_common(1)[0][0] if names[key] else key,
+                "unit": units[key].most_common(1)[0][0] if units[key] else example.get("unit"),
+                "canonical_name": example.get("canonical_name") or canonical_name_for(key),
+                "source_name": example.get("source_name") or key,
+                "file_count": int(count),
+                "total_files": int(total_files),
+                "frequency": float(count / total_files),
+            }
+        )
+    rows.sort(key=lambda row: (-row["frequency"], channel_sort_key(str(row.get("canonical_name") or row["channel"])), row["channel"]))
+    return {
+        "status": "ok",
+        "total_files": total_files,
+        "min_frequency": threshold,
+        "channels": rows,
+    }
+
+
+def source_candidates_for_export_name(name: str) -> list[str]:
+    raw = str(name or "").strip()
+    if not raw:
+        return []
+    candidates = [raw]
+    source = source_name_for(raw)
+    if source not in candidates:
+        candidates.append(source)
+    canonical = canonical_name_for(raw)
+    if canonical not in candidates:
+        candidates.append(canonical)
+    spec = SPEC_BY_SOURCE.get(raw) or SPEC_BY_SOURCE.get(source)
+    if spec is not None:
+        for candidate in (spec.source_name, spec.canonical_name):
+            if candidate not in candidates:
+                candidates.append(candidate)
+    return candidates
+
+
+def channel_lookup_key(channel: Any) -> tuple[str, str]:
+    return (str(getattr(channel, "name", "")), str(channel))
+
+
+def build_dxd_channel_lookup(reader: Any) -> dict[str, Any]:
+    lookup: dict[str, Any] = {}
+    for channel in reader:
+        name, display_name = channel_lookup_key(channel)
+        lookup[name] = channel
+        lookup[display_name] = channel
+    return lookup
+
+
+def find_dxd_channel(lookup: dict[str, Any], requested_name: str) -> Any | None:
+    for candidate in source_candidates_for_export_name(requested_name):
+        channel = lookup.get(candidate)
+        if channel is not None:
+            return channel
+    return None
+
+
+def safe_export_json_name(file_name: str, output_name: str | None = None) -> str:
+    raw = str(output_name or "").strip()
+    if not raw:
+        raw = f"{Path(file_name).stem}.json"
+    raw = Path(raw).name
+    if not raw.lower().endswith(".json"):
+        raw = f"{raw}.json"
+    stem = "".join(c if c.isalnum() or c in ("_", "-", ".") else "_" for c in Path(raw).stem).strip("._-")
+    if not stem:
+        stem = Path(file_name).stem
+    return f"{stem}.json"
+
+
+def validate_export_hz(value: Any) -> float:
+    try:
+        hz = float(value)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="target_hz must be numeric") from None
+    if not np.isfinite(hz) or hz <= 0:
+        raise HTTPException(status_code=400, detail="target_hz must be positive")
+    if hz > 1000:
+        raise HTTPException(status_code=400, detail="target_hz must be <= 1000 Hz")
+    return hz
+
+
+def resample_series_to_grid(series: pd.Series, grid: np.ndarray) -> np.ndarray:
+    if len(series) == 0:
+        return np.full(len(grid), np.nan, dtype=np.float64)
+    x = pd.to_numeric(pd.Series(series.index), errors="coerce").to_numpy(dtype=np.float64)
+    y = pd.to_numeric(pd.Series(series.to_numpy()), errors="coerce").to_numpy(dtype=np.float64)
+    mask = np.isfinite(x) & np.isfinite(y)
+    if int(mask.sum()) == 0:
+        return np.full(len(grid), np.nan, dtype=np.float64)
+    x = x[mask]
+    y = y[mask]
+    order = np.argsort(x, kind="mergesort")
+    x = x[order]
+    y = y[order]
+    x_unique, unique_idx = np.unique(x, return_index=True)
+    y_unique = y[unique_idx]
+    if len(x_unique) == 1:
+        return np.full(len(grid), float(y_unique[0]), dtype=np.float64)
+    return np.interp(grid, x_unique, y_unique, left=np.nan, right=np.nan)
+
+
+def export_dxd_json(
+    path: Path,
+    requested_channels: Sequence[str],
+    target_hz: float,
+    output_name: str | None = None,
+    analysis_id: str | None = None,
+) -> dict[str, Any]:
+    selected = [str(ch).strip() for ch in requested_channels if str(ch).strip()]
+    selected = list(dict.fromkeys(selected))
+    if not selected:
+        raise HTTPException(status_code=400, detail="No channels selected")
+
+    with open_dxd(path) as reader:
+        lookup = build_dxd_channel_lookup(reader)
+        resolved: list[tuple[str, Any]] = []
+        missing: list[str] = []
+        for requested in selected:
+            channel = find_dxd_channel(lookup, requested)
+            if channel is None:
+                missing.append(requested)
+            else:
+                resolved.append((requested, channel))
+        if not resolved:
+            raise HTTPException(status_code=400, detail=f"No selected channel found in {path.name}")
+
+        source_series: list[tuple[str, str, str, pd.Series]] = []
+        min_time: float | None = None
+        max_time: float | None = None
+        for requested, channel in resolved:
+            series = channel.series()
+            numeric_index = pd.to_numeric(pd.Series(series.index), errors="coerce").to_numpy(dtype=np.float64)
+            finite_index = numeric_index[np.isfinite(numeric_index)]
+            if len(finite_index) == 0:
+                continue
+            min_time = float(np.nanmin(finite_index)) if min_time is None else min(min_time, float(np.nanmin(finite_index)))
+            max_time = float(np.nanmax(finite_index)) if max_time is None else max(max_time, float(np.nanmax(finite_index)))
+            source_series.append((requested, channel.name, str(channel), series))
+
+        if not source_series or min_time is None or max_time is None or max_time < min_time:
+            raise HTTPException(status_code=400, detail="Selected channels have no readable samples")
+
+        step = 1.0 / target_hz
+        n_samples = int(np.floor((max_time - min_time) * target_hz)) + 1
+        if n_samples <= 0:
+            raise HTTPException(status_code=400, detail="Computed empty export grid")
+        grid = min_time + np.arange(n_samples, dtype=np.float64) * step
+
+        resampled: dict[str, Any] = {}
+        source_to_canonical: dict[str, str] = {}
+        canonical_to_source: dict[str, str] = {}
+        for requested, source_name, display_name, series in source_series:
+            values = resample_series_to_grid(series, grid)
+            lookup_name = display_name if display_name in SPEC_BY_SOURCE else source_name
+            if lookup_name not in SPEC_BY_SOURCE:
+                lookup_name = source_name_for(requested)
+            canonical = canonical_name_for(lookup_name)
+            if canonical == lookup_name:
+                canonical = canonical_name_for(requested)
+            if canonical in resampled and source_name != canonical:
+                canonical = source_name
+            metadata = channel_metadata(canonical, lookup_name if lookup_name in SPEC_BY_SOURCE else source_name)
+            metadata["source_name"] = display_name
+            metadata["values"] = to_json_list(values)
+            resampled[canonical] = metadata
+            source_to_canonical[display_name] = canonical
+            source_to_canonical[source_name] = canonical
+            canonical_to_source[canonical] = display_name
+
+        stat = path.stat()
+        created_at = datetime.utcnow().isoformat(timespec="seconds") + "Z"
+        payload = {
+            "schema_version": "dxd_resampled_export.v1",
+            "analysis_id": analysis_id,
+            "file": path.name,
+            "source_path": str(path),
+            "date": extract_date_from_name(path.name),
+            "modified_at": datetime.fromtimestamp(stat.st_mtime).isoformat(timespec="seconds"),
+            "time": to_json_list(grid),
+            "target_hz": target_hz,
+            "timebase": {
+                "time": to_json_list(grid),
+                "unit": "s",
+                "start": float(min_time),
+                "end": float(grid[-1]) if len(grid) else None,
+                "sample_count": int(len(grid)),
+            },
+            "pipeline": {
+                "name": "app_dxd_json_export",
+                "analysis_id": analysis_id,
+                "target_hz": target_hz,
+                "created_at": created_at,
+                "missing_requested_channels": missing,
+            },
+            "channels": {
+                "resampled": resampled,
+                "source_to_canonical": source_to_canonical,
+                "canonical_to_source": canonical_to_source,
+            },
+            "features": {},
+        }
+
+    RAW_JSON_DIR.mkdir(parents=True, exist_ok=True)
+    json_name = safe_export_json_name(path.name, output_name)
+    output_path = RAW_JSON_DIR / json_name
+    output_path.write_text(json.dumps(deep_json_safe(payload), ensure_ascii=False), encoding="utf-8")
+    with connect_pipeline_db(PIPELINE_DB_PATH) as conn:
+        ensure_analysis_tables(conn)
+        write_resampled_json_export(conn, json_name, payload, analysis_id=analysis_id)
+        conn.commit()
+    load_raw_json.cache_clear()
+    load_signal_series_frame.cache_clear()
+    return {
+        "status": "ok",
+        "file": path.name,
+        "json_name": json_name,
+        "output_path": str(output_path),
+        "target_hz": target_hz,
+        "n_samples": int(len(payload["time"])),
+        "n_channels": len(resampled),
+        "exported_channels": list(resampled.keys()),
+        "missing_requested_channels": missing,
+    }
+
+
+def validate_analysis_name(value: Any) -> str:
+    name = str(value or "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="analysis_name is required")
+    if len(name) > 160:
+        raise HTTPException(status_code=400, detail="analysis_name must be <= 160 characters")
+    return name
+
+
+def run_dxd_campaign_export(requested_channels: Sequence[str], target_hz: float, analysis_name: str) -> dict[str, Any]:
+    files = list_dxd_files()
+    started_at = datetime.utcnow().isoformat(timespec="seconds") + "Z"
+    config = {
+        "source": "dxd_campaign_export",
+        "analysis_name": analysis_name,
+        "target_hz": target_hz,
+        "channels": list(requested_channels),
+        "n_channels": len(list(requested_channels)),
+        "dxd_file_count": len(files),
+        "recurrent_channels": recurrent_campaign_channels(),
+    }
+    with connect_pipeline_db(PIPELINE_DB_PATH) as conn:
+        analysis_id = create_pipeline_analysis(
+            conn,
+            kind="dxd_campaign_export",
+            title=analysis_name,
+            config=config,
+            status="running",
+        )
+        write_analysis_artifact(
+            conn,
+            analysis_id,
+            "channel_structure",
+            "json",
+            path=CHANNEL_ANALYSIS_DETAILS_PATH,
+            payload=config["recurrent_channels"],
+        )
+        if SEGMENT_ANNOTATION_CSV.exists():
+            write_analysis_artifact(
+                conn,
+                analysis_id,
+                "segment_annotations",
+                "csv",
+                path=SEGMENT_ANNOTATION_CSV,
+                payload={"path": str(SEGMENT_ANNOTATION_CSV)},
+            )
+        if SEGMENT_CNN_MODEL_SUMMARY_PATH.exists():
+            try:
+                write_analysis_artifact(
+                    conn,
+                    analysis_id,
+                    "segment_cnn_model_summary",
+                    "json",
+                    path=SEGMENT_CNN_MODEL_SUMMARY_PATH,
+                    payload=load_json(SEGMENT_CNN_MODEL_SUMMARY_PATH),
+                )
+            except Exception:
+                pass
+        conn.commit()
+    write_json_atomic(
+        DXD_EXPORT_PROGRESS_PATH,
+        {
+            "status": "running",
+            "analysis_id": analysis_id,
+            "started_at": started_at,
+            "processed_files": 0,
+            "total_files": len(files),
+            "target_hz": target_hz,
+            "output_dir": str(RAW_JSON_DIR),
+        },
+    )
+    exported: list[dict[str, Any]] = []
+    errors: list[dict[str, Any]] = []
+    for idx, item in enumerate(files, start=1):
+        path = Path(str(item["path"]))
+        write_json_atomic(
+            DXD_EXPORT_PROGRESS_PATH,
+            {
+                "status": "running",
+                "analysis_id": analysis_id,
+                "started_at": started_at,
+                "current_file": path.name,
+                "processed_files": idx - 1,
+                "total_files": len(files),
+                "target_hz": target_hz,
+                "output_dir": str(RAW_JSON_DIR),
+                "exported_files": len(exported),
+                "error_files": len(errors),
+            },
+        )
+        try:
+            exported.append(export_dxd_json(path, requested_channels, target_hz, analysis_id=analysis_id))
+        except Exception as exc:
+            errors.append({"file": path.name, "error": str(exc)})
+
+    finished_at = datetime.utcnow().isoformat(timespec="seconds") + "Z"
+    result = {
+        "status": "finished",
+        "analysis_id": analysis_id,
+        "started_at": started_at,
+        "finished_at": finished_at,
+        "processed_files": len(files),
+        "total_files": len(files),
+        "target_hz": target_hz,
+        "output_dir": str(RAW_JSON_DIR),
+        "exported_files": len(exported),
+        "error_files": len(errors),
+        "errors": errors[:50],
+    }
+    with connect_pipeline_db(PIPELINE_DB_PATH) as conn:
+        update_pipeline_analysis(
+            conn,
+            analysis_id,
+            status="finished",
+            summary={
+                "processed_files": len(files),
+                "exported_files": len(exported),
+                "error_files": len(errors),
+                "target_hz": target_hz,
+                "output_dir": str(RAW_JSON_DIR),
+                "errors": errors[:50],
+            },
+        )
+        conn.commit()
+    write_json_atomic(DXD_EXPORT_PROGRESS_PATH, result)
+    return result
+
+
+def run_dxd_channel_analysis(
+    limit: int | None = None,
+    analysis_name: str | None = None,
+    data_dir: Path | str | None = None,
+    channel_preset: str | None = None,
+    normalize_names: bool = True,
+) -> dict[str, Any]:
+    dxd_dir = resolve_dxd_data_dir(data_dir)
+    files = list_dxd_files(dxd_dir)
+    if limit is not None:
+        files = files[: max(1, int(limit))]
+    started_at = datetime.utcnow().isoformat(timespec="seconds") + "Z"
+    title = (analysis_name or "").strip() or f"Analyse structure canaux DXD {started_at}"
+    with connect_pipeline_db(PIPELINE_DB_PATH) as conn:
+        analysis_id = create_pipeline_analysis(
+            conn,
+            kind="dxd_channel_structure",
+            title=title,
+            config={
+                "source": "dxd_channel_analysis",
+                "analysis_name": title,
+                "limit": limit,
+                "data_dir": str(dxd_dir),
+                "channel_preset": channel_preset or "app_default",
+                "normalize_names": bool(normalize_names),
+                "dxd_file_count": len(files),
+                "target_channels": channel_structure_names(channel_preset),
+            },
+            status="running",
+        )
+        conn.commit()
+    CHANNEL_ANALYSIS_LOG_PATH.write_text(
+        f"[{started_at}] Analyse des canaux DXD\nAnalyse: {title}\nID: {analysis_id}\nDossier: {dxd_dir}\nPreset: {channel_preset or 'app_default'}\nNormalisation: {bool(normalize_names)}\nFichiers: {len(files)}\n\n",
+        encoding="utf-8",
+    )
+    rows: list[dict[str, Any]] = []
+    details: dict[str, Any] = {}
+    target_channels = channel_structure_names(channel_preset)
+    for idx, item in enumerate(files, start=1):
+        path = Path(str(item["path"]))
+        progress = {
+            "status": "running",
+            "analysis_id": analysis_id,
+            "analysis_name": title,
+            "data_dir": str(dxd_dir),
+            "channel_preset": channel_preset or "app_default",
+            "normalize_names": bool(normalize_names),
+            "started_at": started_at,
+            "current_file": path.name,
+            "processed_files": idx - 1,
+            "total_files": len(files),
+            "output_csv": str(CHANNEL_PRESENCE_PATH),
+            "log_path": str(CHANNEL_ANALYSIS_LOG_PATH),
+        }
+        write_json_atomic(CHANNEL_ANALYSIS_PROGRESS_PATH, progress)
+        with open(CHANNEL_ANALYSIS_LOG_PATH, "a", encoding="utf-8") as log:
+            log.write(f"[{idx}/{len(files)}] {path.name}\n")
+        try:
+            summary = summarize_dxd_channels_with_timeout(
+                path,
+                channel_preset=channel_preset,
+                normalize_names=normalize_names,
+            )
+            row = {
+                "file": path.name,
+                "path": str(path),
+                "status": "ok",
+                "size_mb": item.get("size_mb"),
+                "modified_at": item.get("modified_at"),
+                "sample_rate": summary.get("sample_rate"),
+                "n_channels": summary.get("n_channels"),
+                "present_target_count": summary.get("present_target_count"),
+                "missing_target_count": summary.get("missing_target_count"),
+                "target_count": summary.get("target_count"),
+                "missing_targets": ";".join(summary.get("missing_targets") or []),
+                "error": "",
+            }
+            for channel_name in channel_structure_names(channel_preset):
+                col_name = canonical_name_for(channel_name) if normalize_names else source_name_for(channel_name)
+                row[f"has::{col_name}"] = col_name in set(summary.get("present_targets") or [])
+            rows.append(row)
+            details[path.name] = {
+                "file": path.name,
+                "path": str(path),
+                "status": "ok",
+                "sample_rate": summary.get("sample_rate"),
+                "n_channels": summary.get("n_channels"),
+                "channels": summary.get("channels") or [],
+                "present_targets": summary.get("present_targets") or [],
+                "missing_targets": summary.get("missing_targets") or [],
+            }
+        except Exception as exc:
+            rows.append(
+                {
+                    "file": path.name,
+                    "path": str(path),
+                    "status": "error",
+                    "size_mb": item.get("size_mb"),
+                    "modified_at": item.get("modified_at"),
+                    "sample_rate": None,
+                    "n_channels": None,
+                    "present_target_count": 0,
+                    "missing_target_count": len(target_channels),
+                    "target_count": len(target_channels),
+                    "missing_targets": "",
+                    "error": str(exc),
+                }
+            )
+            details[path.name] = {
+                "file": path.name,
+                "path": str(path),
+                "status": "error",
+                "channels": [],
+                "present_targets": [],
+                "missing_targets": [],
+                "error": str(exc),
+            }
+            with open(CHANNEL_ANALYSIS_LOG_PATH, "a", encoding="utf-8") as log:
+                log.write(f"  ERROR: {exc}\n")
+
+    df = pd.DataFrame(rows)
+    df.to_csv(CHANNEL_PRESENCE_PATH, index=False)
+    CHANNEL_ANALYSIS_DETAILS_PATH.write_text(json.dumps(details, ensure_ascii=False), encoding="utf-8")
+    finished_at = datetime.utcnow().isoformat(timespec="seconds") + "Z"
+    result = {
+        "status": "finished",
+        "analysis_id": analysis_id,
+        "analysis_name": title,
+        "started_at": started_at,
+        "finished_at": finished_at,
+        "processed_files": len(files),
+        "total_files": len(files),
+        "ok_files": int((df["status"] == "ok").sum()) if not df.empty and "status" in df.columns else 0,
+        "error_files": int((df["status"] == "error").sum()) if not df.empty and "status" in df.columns else 0,
+        "output_csv": str(CHANNEL_PRESENCE_PATH),
+        "data_dir": str(dxd_dir),
+        "channel_preset": channel_preset or "app_default",
+        "normalize_names": bool(normalize_names),
+        "log_path": str(CHANNEL_ANALYSIS_LOG_PATH),
+    }
+    with connect_pipeline_db(PIPELINE_DB_PATH) as conn:
+        write_analysis_artifact(
+            conn,
+            analysis_id,
+            "channel_presence",
+            "csv",
+            path=CHANNEL_PRESENCE_PATH,
+            payload={"path": str(CHANNEL_PRESENCE_PATH), "rows": len(rows)},
+        )
+        write_analysis_artifact(
+            conn,
+            analysis_id,
+            "channel_analysis_details",
+            "json",
+            path=CHANNEL_ANALYSIS_DETAILS_PATH,
+            payload=details,
+        )
+        write_analysis_artifact(
+            conn,
+            analysis_id,
+            "channel_analysis_log",
+            "log",
+            path=CHANNEL_ANALYSIS_LOG_PATH,
+            payload={"path": str(CHANNEL_ANALYSIS_LOG_PATH)},
+        )
+        update_pipeline_analysis(
+            conn,
+            analysis_id,
+            status="finished",
+            summary={
+                "processed_files": len(files),
+                "ok_files": result["ok_files"],
+                "error_files": result["error_files"],
+                "output_csv": str(CHANNEL_PRESENCE_PATH),
+                "details_path": str(CHANNEL_ANALYSIS_DETAILS_PATH),
+                "log_path": str(CHANNEL_ANALYSIS_LOG_PATH),
+            },
+        )
+        conn.commit()
+    write_json_atomic(CHANNEL_ANALYSIS_PROGRESS_PATH, result)
+    return result
 
 
 def raw_json_to_dataframe(raw_data: dict) -> pd.DataFrame:
@@ -1908,6 +2750,298 @@ def api_speed_day_summary(
 @app.get("/api/files")
 def api_files():
     return {"items": list_json_files()}
+
+
+@app.get("/api/analyses")
+def api_analyses(limit: int = Query(100, ge=1, le=1000)):
+    return {"items": deep_json_safe(list_pipeline_analyses(PIPELINE_DB_PATH, limit=limit))}
+
+
+@app.get("/api/analyses/{analysis_id}")
+def api_analysis_detail(analysis_id: str):
+    item = get_pipeline_analysis(analysis_id, PIPELINE_DB_PATH)
+    if item is None:
+        raise HTTPException(status_code=404, detail="Analysis not found")
+    return deep_json_safe(item)
+
+
+@app.get("/api/dxd-channel-analysis/files")
+def api_dxd_channel_analysis_files(data_dir: Optional[str] = None):
+    return {"items": deep_json_safe(list_dxd_files(data_dir))}
+
+
+@app.get("/api/dxd-channel-analysis/export-options")
+def api_dxd_channel_analysis_export_options():
+    recurrent = recurrent_campaign_channels()
+    presets = channel_export_presets()
+    presets["recurrent"]["channels"] = [row["channel"] for row in recurrent.get("channels", [])]
+    return deep_json_safe(
+        {
+            "default_hz": DEFAULT_DXD_EXPORT_HZ,
+            "presets": presets,
+            "recurrent": recurrent,
+            "canonical_channels": [
+                {
+                    "canonical_name": spec.canonical_name,
+                    "source_name": spec.source_name,
+                    "raw_unit": spec.raw_unit,
+                    "unit": spec.unit,
+                    "frame": spec.frame,
+                }
+                for spec in CHANNEL_SPECS
+            ],
+        }
+    )
+
+
+@app.get("/api/dxd-channel-analysis/recurrent-channels")
+def api_dxd_channel_analysis_recurrent_channels(min_frequency: float = Query(0.8, ge=0.0, le=1.0)):
+    return deep_json_safe(recurrent_campaign_channels(min_frequency=min_frequency))
+
+
+@app.get("/api/dxd-channel-analysis/export-status")
+def api_dxd_channel_analysis_export_status():
+    if DXD_EXPORT_PROGRESS_PATH.exists():
+        try:
+            return deep_json_safe({"progress": load_json(DXD_EXPORT_PROGRESS_PATH)})
+        except Exception as exc:
+            return {"progress": {"status": "unknown", "message": str(exc)}}
+    return {"progress": {"status": "not_started"}}
+
+
+@app.get("/api/dxd-channel-analysis/status")
+def api_dxd_channel_analysis_status(limit: int = Query(100, ge=1, le=1000)):
+    if CHANNEL_ANALYSIS_PROGRESS_PATH.exists():
+        try:
+            progress = load_json(CHANNEL_ANALYSIS_PROGRESS_PATH)
+        except Exception as exc:
+            progress = {"status": "unknown", "message": str(exc)}
+    else:
+        progress = {"status": "not_started"}
+    progress = mark_stale_channel_analysis_progress(progress)
+
+    rows: list[dict[str, Any]] = []
+    if CHANNEL_PRESENCE_PATH.exists():
+        try:
+            df = pd.read_csv(CHANNEL_PRESENCE_PATH).head(limit)
+            if "available_channels" in df.columns:
+                df = df.drop(columns=["available_channels"])
+            rows = records_json_safe(df)
+            progress["output_csv"] = str(CHANNEL_PRESENCE_PATH)
+            progress["n_rows"] = int(len(pd.read_csv(CHANNEL_PRESENCE_PATH, usecols=["file"])))
+        except Exception as exc:
+            progress["csv_error"] = str(exc)
+
+    if CHANNEL_ANALYSIS_LOG_PATH.exists():
+        try:
+            lines = CHANNEL_ANALYSIS_LOG_PATH.read_text(encoding="utf-8", errors="replace").splitlines()
+            progress["log_tail"] = "\n".join(lines[-120:])
+        except Exception as exc:
+            progress["log_tail"] = f"Unable to read log: {exc}"
+    else:
+        progress["log_tail"] = ""
+    return deep_json_safe({"progress": progress, "items": rows})
+
+
+@app.get("/api/dxd-channel-analysis/channels/{file_name}")
+def api_dxd_channel_analysis_file_channels(
+    file_name: str,
+    data_dir: Optional[str] = None,
+    channel_preset: Optional[str] = None,
+    normalize_names: bool = True,
+):
+    safe_name = Path(file_name).name
+    if safe_name != file_name:
+        raise HTTPException(status_code=400, detail="Invalid file name")
+    details: dict[str, Any] = {}
+    if CHANNEL_ANALYSIS_DETAILS_PATH.exists():
+        try:
+            details = load_json(CHANNEL_ANALYSIS_DETAILS_PATH)
+        except Exception:
+            details = {}
+    if safe_name in details and data_dir is None and channel_preset is None and normalize_names is True:
+        detail = dict(details[safe_name])
+        detail["channels"] = enrich_dxd_channel_rows(detail.get("channels") or [])
+        return deep_json_safe(detail)
+
+    path = resolve_dxd_data_dir(data_dir) / safe_name
+    if not path.exists() or path.suffix.lower() != ".dxd":
+        raise HTTPException(status_code=404, detail="DXD file not found")
+    try:
+        detail = summarize_dxd_channels_with_timeout(
+            path,
+            channel_preset=channel_preset,
+            normalize_names=normalize_names,
+        )
+        detail["channels"] = enrich_dxd_channel_rows(detail.get("channels") or [])
+        return deep_json_safe(detail)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.post("/api/dxd-channel-analysis/run")
+def api_run_dxd_channel_analysis(background_tasks: BackgroundTasks, payload: Dict[str, Any] = Body(default={})):
+    if CHANNEL_ANALYSIS_PROGRESS_PATH.exists():
+        try:
+            current = mark_stale_channel_analysis_progress(load_json(CHANNEL_ANALYSIS_PROGRESS_PATH))
+            if current.get("status") == "running":
+                return {"status": "already_running", "message": "Une analyse des canaux DXD est déjà en cours."}
+        except Exception:
+            pass
+
+    limit_raw = payload.get("limit")
+    limit = None
+    if limit_raw not in (None, ""):
+        try:
+            limit = max(1, int(limit_raw))
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=400, detail="limit must be numeric") from None
+    analysis_name = str(payload.get("analysis_name") or "").strip() or None
+    if analysis_name is not None and len(analysis_name) > 160:
+        raise HTTPException(status_code=400, detail="analysis_name must be <= 160 characters")
+    data_dir = str(payload.get("data_dir") or "").strip() or None
+    dxd_dir = resolve_dxd_data_dir(data_dir)
+    channel_preset = str(payload.get("channel_preset") or "app_default").strip() or "app_default"
+    if channel_preset not in channel_export_presets():
+        raise HTTPException(status_code=400, detail="Unknown channel_preset")
+    normalize_names = bool(payload.get("normalize_names", True))
+
+    started_at = datetime.utcnow().isoformat(timespec="seconds") + "Z"
+    write_json_atomic(
+        CHANNEL_ANALYSIS_PROGRESS_PATH,
+        {
+            "status": "running",
+            "analysis_name": analysis_name,
+            "data_dir": str(dxd_dir),
+            "channel_preset": channel_preset,
+            "normalize_names": normalize_names,
+            "started_at": started_at,
+            "processed_files": 0,
+            "total_files": len(list_dxd_files(dxd_dir)[:limit]) if limit is not None else len(list_dxd_files(dxd_dir)),
+            "output_csv": str(CHANNEL_PRESENCE_PATH),
+            "log_path": str(CHANNEL_ANALYSIS_LOG_PATH),
+        },
+    )
+
+    def run_analysis():
+        try:
+            run_dxd_channel_analysis(
+                limit=limit,
+                analysis_name=analysis_name,
+                data_dir=dxd_dir,
+                channel_preset=channel_preset,
+                normalize_names=normalize_names,
+            )
+        except Exception as exc:
+            write_json_atomic(
+                CHANNEL_ANALYSIS_PROGRESS_PATH,
+                {
+                    "status": "error",
+                    "analysis_name": analysis_name,
+                    "data_dir": str(dxd_dir),
+                    "channel_preset": channel_preset,
+                    "normalize_names": normalize_names,
+                    "started_at": started_at,
+                    "finished_at": datetime.utcnow().isoformat(timespec="seconds") + "Z",
+                    "message": str(exc),
+                    "output_csv": str(CHANNEL_PRESENCE_PATH),
+                    "log_path": str(CHANNEL_ANALYSIS_LOG_PATH),
+                },
+            )
+            with open(CHANNEL_ANALYSIS_LOG_PATH, "a", encoding="utf-8") as log:
+                log.write(f"\nFATAL: {exc}\n")
+
+    background_tasks.add_task(run_analysis)
+    return {
+        "status": "started",
+        "analysis_name": analysis_name,
+        "data_dir": str(dxd_dir),
+        "channel_preset": channel_preset,
+        "normalize_names": normalize_names,
+        "limit": limit,
+        "output_csv": str(CHANNEL_PRESENCE_PATH),
+    }
+
+
+@app.post("/api/dxd-channel-analysis/export-json")
+def api_dxd_channel_analysis_export_json(background_tasks: BackgroundTasks, payload: Dict[str, Any] = Body(default={})):
+    file_name = str(payload.get("file") or "").strip()
+    analysis_name = validate_analysis_name(payload.get("analysis_name"))
+    target_hz = validate_export_hz(payload.get("target_hz", DEFAULT_DXD_EXPORT_HZ))
+    channels = payload.get("channels") or []
+    if isinstance(channels, str):
+        channels = [item.strip() for item in channels.split(",") if item.strip()]
+    if not isinstance(channels, list):
+        raise HTTPException(status_code=400, detail="channels must be a list")
+    if not channels:
+        raise HTTPException(status_code=400, detail="No channels selected")
+
+    if not file_name:
+        if DXD_EXPORT_PROGRESS_PATH.exists():
+            try:
+                current = load_json(DXD_EXPORT_PROGRESS_PATH)
+                if current.get("status") == "running":
+                    return {"status": "already_running", "message": "Un export JSON DXD est déjà en cours."}
+            except Exception:
+                pass
+        background_tasks.add_task(run_dxd_campaign_export, [str(ch) for ch in channels], target_hz, analysis_name)
+        return {
+            "status": "started",
+            "mode": "campaign",
+            "analysis_name": analysis_name,
+            "total_files": len(list_dxd_files()),
+            "target_hz": target_hz,
+            "output_dir": str(RAW_JSON_DIR),
+        }
+
+    safe_name = Path(file_name).name
+    if safe_name != file_name:
+        raise HTTPException(status_code=400, detail="Invalid file name")
+    path = DXD_DATA_DIR / safe_name
+    if not path.exists() or path.suffix.lower() != ".dxd":
+        raise HTTPException(status_code=404, detail="DXD file not found")
+
+    output_name = payload.get("output_name")
+    try:
+        started_at = datetime.utcnow().isoformat(timespec="seconds") + "Z"
+        with connect_pipeline_db(PIPELINE_DB_PATH) as conn:
+            analysis_id = create_pipeline_analysis(
+                conn,
+                kind="dxd_file_export",
+                title=analysis_name,
+                config={
+                    "source": "dxd_file_export",
+                    "analysis_name": analysis_name,
+                    "file": safe_name,
+                    "target_hz": target_hz,
+                    "channels": [str(ch) for ch in channels],
+                    "n_channels": len(channels),
+                },
+                status="running",
+            )
+            conn.commit()
+        result = export_dxd_json(path, channels, target_hz, output_name, analysis_id=analysis_id)
+        with connect_pipeline_db(PIPELINE_DB_PATH) as conn:
+            update_pipeline_analysis(
+                conn,
+                analysis_id,
+                status="finished",
+                summary={
+                    "processed_files": 1,
+                    "exported_files": 1,
+                    "error_files": 0,
+                    "target_hz": target_hz,
+                    "json_name": result.get("json_name"),
+                    "output_path": result.get("output_path"),
+                },
+            )
+            conn.commit()
+        result["analysis_id"] = analysis_id
+        return deep_json_safe(result)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
 @app.get("/api/annotator/file/{json_name}")
