@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import os
 from pathlib import Path
 from typing import Any, Dict, Optional, Sequence
 import re
@@ -79,7 +78,6 @@ RAW_JSON_DIR = BASE_DIR / "selected_dxd_json_resampled"
 ANNOTATION_DIR = BASE_DIR / "manual_segment_annotations"
 SEGMENT_ANNOTATION_CSV = ANNOTATION_DIR / "segments_annotations.csv"
 SEGMENT_ANNOTATION_JSONL = ANNOTATION_DIR / "segments_annotations.jsonl"
-DRIFT_INDEX_PATH = BASE_DIR / "drift_index.json"
 STATIC_DIR = BASE_DIR / "static"
 DXD_DATA_DIR = BASE_DIR / "data"
 DATASET_INDEX_PATH = BASE_DIR / "dataset_index.json"
@@ -88,7 +86,6 @@ CORRELATION_ANOMALY_INDEX_PATH = BASE_DIR / "correlation_anomaly_index.json"
 WINDOW_QUALITY_INDEX_PATH = BASE_DIR / "window_quality_index.csv"
 WINDOW_QUALITY_SUMMARY_PATH = BASE_DIR / "window_quality_summary.json"
 WINDOW_CLUSTER_INDEX_PATH = BASE_DIR / "window_cluster_index.csv"
-WINDOW_CLUSTER_SUMMARY_PATH = BASE_DIR / "window_cluster_summary.json"
 SPEED_DAY_SUMMARY_PATH = BASE_DIR / "speed_day_summary.csv"
 SPEED_DAY_SUMMARY_JSON_PATH = BASE_DIR / "speed_day_summary.json"
 CHANNEL_ANALYSIS_PROGRESS_PATH = BASE_DIR / "channel_analysis_progress.json"
@@ -101,31 +98,6 @@ DEFAULT_DXD_EXPORT_HZ = 100.0
 DRIFT_COHERENCE_TRAIN_PROGRESS_PATH = ANNOTATION_DIR / "drift_coherence_training_progress.json"
 DRIFT_COHERENCE_TRAIN_LOG_PATH = ANNOTATION_DIR / "drift_coherence_training.log"
 DRIFT_RUN_PREFIXES = ("dynamic_channel_coherence",)
-
-RESIDUAL_DRIFT_FAMILIES = {
-    "accel_kinematic": {
-        "label": "Accélération / cinématique",
-        "metrics": ["r_ax_rms", "r_ay_rms", "r_ay_simple_rms"],
-    },
-    "distance_curvature": {
-        "label": "Distance / courbure",
-        "metrics": ["r_dist_rms", "r_kappa_rms"],
-    },
-    "gps": {
-        "label": "GPS",
-        "metrics": [
-            "r_gps_pos_rmse",
-            "r_gps_pos_aligned_rmse",
-            "r_gps_speed_rms",
-            "r_gps_body_speed_rms",
-            "r_gps_yaw_rms",
-        ],
-    },
-    "wheel_imu": {
-        "label": "Roues / IMU",
-        "metrics": ["r_wheel_rms", "r_imu_x_rms", "r_imu_y_rms", "r_imu_z_rms"],
-    },
-}
 
 SEGMENT_CNN_MODEL_SUMMARY_PATH = MODEL_SUMMARY_PATH
 SEGMENT_CNN_MODEL_WEIGHTS_PATH = MODEL_WEIGHTS_PATH
@@ -393,38 +365,6 @@ def load_window_quality_frame() -> pd.DataFrame:
             detail=f"Missing file: {WINDOW_QUALITY_INDEX_PATH.name}. Run build_window_quality_index.py first.",
         )
     return pd.read_csv(path)
-
-
-def parse_acquisition_timestamp(row: pd.Series) -> pd.Timestamp | None:
-    modified_at = row.get("modified_at")
-    if modified_at is not None and str(modified_at).strip():
-        ts = pd.to_datetime(modified_at, errors="coerce", utc=True)
-        if pd.notna(ts):
-            return ts
-
-    date_value = row.get("date")
-    if date_value is not None and str(date_value).strip():
-        text = str(date_value).strip()
-        text = text.replace("_", "-")
-        ts = pd.to_datetime(text, errors="coerce", utc=True)
-        if pd.notna(ts):
-            return ts
-
-    return None
-
-
-def aggregate_series(values: pd.Series, aggregation: str) -> float | None:
-    numeric = pd.to_numeric(values, errors="coerce").dropna()
-    if numeric.empty:
-        return None
-    if aggregation == "mean":
-        return float(numeric.mean())
-    if aggregation == "p95":
-        return float(numeric.quantile(0.95))
-    return float(numeric.median())
-
-
-
 
 
 def load_speed_day_summary_json() -> dict:
@@ -1283,25 +1223,6 @@ def run_dxd_channel_analysis(
     return result
 
 
-def raw_json_to_dataframe(raw_data: dict) -> pd.DataFrame:
-    time = get_time_values(raw_data)
-    channels = get_resampled_channels(raw_data)
-
-    if len(time) == 0:
-        raise ValueError("Empty time array")
-
-    df = pd.DataFrame({"time": pd.to_numeric(pd.Series(time), errors="coerce")})
-
-    for ch_name, payload in channels.items():
-        vals = payload.get("values", [])
-        s = pd.to_numeric(pd.Series(vals), errors="coerce")
-        n = min(len(df), len(s))
-        if n > 0:
-            df.loc[: n - 1, ch_name] = s.iloc[:n].to_numpy()
-
-    return df
-
-
 @lru_cache(maxsize=512)
 def load_signal_series_frame(json_name: str, channel_names_key: tuple[str, ...]) -> pd.DataFrame:
     raw = load_raw_json(json_name)
@@ -1709,27 +1630,6 @@ def file_base_timestamp(raw: dict) -> pd.Timestamp | None:
     return None
 
 
-def time_bucket_for_value(raw: dict, seconds: float, grouping: str) -> tuple[str | None, int | None, str]:
-    base = file_base_timestamp(raw)
-    if base is not None:
-        ts = base + pd.to_timedelta(float(seconds), unit="s")
-        date_value = ts.strftime("%Y-%m-%d")
-        hour_value = int(ts.hour)
-        if grouping == "day":
-            return date_value, None, date_value
-        if grouping == "hour":
-            return None, hour_value, f"{hour_value:02d}:00"
-        return date_value, hour_value, ts.floor("h").strftime("%Y-%m-%dT%H:%M:%S")
-
-    date_value = str(raw.get("date") or "unknown").replace("_", "-")
-    hour_value = int(max(0, float(seconds)) // 3600)
-    if grouping == "day":
-        return date_value, None, date_value
-    if grouping == "hour":
-        return None, hour_value, f"{hour_value:02d}:00"
-    return date_value, hour_value, f"{date_value}T{hour_value:02d}:00:00"
-
-
 def time_buckets_for_series(raw: dict, seconds: pd.Series, grouping: str) -> pd.DataFrame:
     numeric_seconds = pd.to_numeric(seconds, errors="coerce").fillna(0.0)
     base = file_base_timestamp(raw)
@@ -1766,25 +1666,6 @@ def time_buckets_for_series(raw: dict, seconds: pd.Series, grouping: str) -> pd.
         "hour": hour_values,
         "time_bucket": hour_values.map(lambda h: f"{date_value}T{int(h):02d}:00:00"),
     })
-
-
-def quantile_row(values: pd.Series) -> dict[str, Any]:
-    numeric = pd.to_numeric(values, errors="coerce").dropna()
-    if numeric.empty:
-        return {}
-    qs = numeric.quantile([0.05, 0.25, 0.5, 0.75, 0.95])
-    return {
-        "n_points": int(len(numeric)),
-        "mean": float(numeric.mean()),
-        "std": json_safe_value(numeric.std()),
-        "min": float(numeric.min()),
-        "q05": float(qs.loc[0.05]),
-        "q25": float(qs.loc[0.25]),
-        "q50": float(qs.loc[0.5]),
-        "q75": float(qs.loc[0.75]),
-        "q95": float(qs.loc[0.95]),
-        "max": float(numeric.max()),
-    }
 
 
 def annotation_filtered_predictions(
@@ -3050,22 +2931,8 @@ def api_annotator_file(json_name: str):
     time_values = get_time_values(raw)
     channels = get_resampled_channels(raw)
 
-    preferred = [
-        "vehicle.vx",
-        "vehicle.speed",
-        "vehicle.ax",
-        "vehicle.ay",
-        "vehicle.yaw_rate",
-        "gps.latitude",
-        "gps.longitude",
-        "WheelSteer_S1 (_)",
-        "WheelSteer_S2 (_)",
-        "WhlDirFl_D_Actl (-)",
-        "WhlDirFr_D_Actl (-)",
-    ]
-
     out_channels: dict[str, Any] = {}
-    for name in preferred:
+    for name in ANNOTATOR_DXD_CHANNELS:
         payload = channels.get(name)
         if not isinstance(payload, dict) or "values" not in payload:
             continue
