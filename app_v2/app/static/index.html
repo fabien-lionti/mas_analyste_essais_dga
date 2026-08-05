@@ -1,0 +1,286 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Analyse Essais DGA</title>
+  <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+  <link rel="stylesheet" href="/static/styles.css?v=20260724-12">
+</head>
+<body>
+  <header>
+    <div>
+      <div class="brand">Analyse Essais DGA</div>
+      <div class="subtitle">Architecture analyse-centrique</div>
+    </div>
+    <nav class="nav" id="mainNav">
+      <button type="button" class="active" data-view="overview">Créer une analyse</button>
+      <button type="button" data-view="choice">Choix analyse</button>
+      <button type="button" data-view="exploration">Exploration</button>
+      <button type="button" data-view="annotations">Annotations</button>
+      <button type="button" data-view="rollover">Retournement</button>
+      <button type="button" data-view="models">Modèles</button>
+    </nav>
+    <div class="status-bar" id="statusBar">Initialisation</div>
+  </header>
+
+  <div class="layout">
+    <main>
+      <section class="kpis" id="kpiGrid"></section>
+
+      <section class="view active" id="view-overview">
+        <div class="panel stack">
+          <h2>Créer une analyse</h2>
+          <div class="subtabs" id="analysisWorkflowTabs">
+            <button type="button" class="active" data-workflow-step="sources">1. Fichiers DXD</button>
+            <button type="button" data-workflow-step="channels" id="workflowChannelsTab">2. Canaux DXD</button>
+            <button type="button" data-workflow-step="sampling" id="workflowSamplingTab">3. Sampling JSON</button>
+          </div>
+          <div class="workflow-step active" id="workflow-sources">
+            <div class="grid-3">
+              <div>
+                <label for="analysisNameInput">Nom</label>
+                <input id="analysisNameInput" value="Nouvelle campagne DXD">
+              </div>
+              <div>
+                <label for="analysisKindInput">Type</label>
+                <select id="analysisKindInput">
+                  <option value="campaign">campaign</option>
+                  <option value="dxd_campaign">dxd_campaign</option>
+                </select>
+              </div>
+              <div>
+                <label for="sourceDxdDirInput">Dossier acquisitions DXD</label>
+                <input id="sourceDxdDirInput" value="data">
+              </div>
+            </div>
+            <div class="row">
+              <label class="row">
+                <input id="discoverOnCreateInput" type="checkbox" checked style="width:auto">
+                <span>Rattacher les .dxd à la création</span>
+              </label>
+              <label class="row">
+                <input id="recursiveInput" type="checkbox" style="width:auto">
+                <span>Scanner récursivement</span>
+              </label>
+            </div>
+            <div class="row">
+              <button type="button" id="createAnalysisBtn">Identifier les DXD</button>
+              <div class="muted" id="workflowSourceState">Aucun périmètre DXD initialisé</div>
+            </div>
+          </div>
+        </div>
+        <div class="workflow-step" id="workflow-channels">
+          <div class="panel stack">
+            <h2>Analyse structure canaux</h2>
+            <div class="grid-2">
+              <label class="row">
+                <input id="normalizeNamesInput" type="checkbox" checked style="width:auto">
+                <span>Normaliser les noms</span>
+              </label>
+              <div>
+                <label for="maxFilesInput">Nombre max de fichiers</label>
+                <input id="maxFilesInput" type="number" min="1" step="1" placeholder="Tous">
+              </div>
+            </div>
+            <div class="row">
+              <button type="button" id="analyzeChannelsBtn">Scanner la structure DXD</button>
+              <button type="button" id="cancelChannelAnalysisBtn" class="secondary" disabled>Stop</button>
+            </div>
+            <div id="channelAnalysisProgress" class="progress-block hidden" aria-live="polite">
+              <div class="progress-header">
+                <span>Analyse des canaux en cours</span>
+                <span id="channelAnalysisProgressLabel">Préparation</span>
+              </div>
+              <div class="progress-track" role="progressbar" aria-label="Analyse des canaux">
+                <div class="progress-fill"></div>
+              </div>
+            </div>
+          </div>
+          <div class="grid-2 channels-layout">
+            <div class="panel stack">
+              <h2>Canaux récurrents</h2>
+              <div>
+                <label for="channelSearchInput">Filtrer par nom de canal</label>
+                <input id="channelSearchInput" type="search" placeholder="Nom normalisé ou DXD">
+              </div>
+              <div class="row">
+                <button type="button" id="selectAllRecurrentBtn" class="secondary">Tout sélectionner</button>
+                <button type="button" id="clearRecurrentBtn" class="secondary">Tout désélectionner</button>
+                <button type="button" id="saveChannelStructureBtn" class="secondary">Sauvegarder la structure</button>
+              </div>
+              <div id="recurrentCount" class="muted"></div>
+              <div id="recurrentTable" class="scroll-table compact-table"></div>
+            </div>
+            <div class="panel">
+              <h2>Structure sauvegardée</h2>
+              <div id="channelStatus"></div>
+            </div>
+          </div>
+          <div class="panel">
+            <h2>Fichiers avec anomalies</h2>
+            <div id="anomalyFilesTable"></div>
+          </div>
+          <div class="panel">
+            <h2>Détail des anomalies</h2>
+            <div id="anomalyDetailTable"></div>
+          </div>
+        </div>
+        <div class="workflow-step" id="workflow-sampling">
+          <div class="panel stack">
+            <h2>Sampling JSON</h2>
+            <div class="grid-3">
+              <div>
+                <label for="samplingRateInput">Fréquence cible (Hz)</label>
+                <input id="samplingRateInput" type="number" min="1" step="1" value="100">
+              </div>
+              <div>
+                <label for="samplingMethodInput">Méthode d'interpolation</label>
+                <select id="samplingMethodInput">
+                  <option value="linear">Interpolation linéaire</option>
+                  <option value="nearest">Plus proche voisin</option>
+                  <option value="zero_order_hold">Maintien ordre zéro</option>
+                </select>
+              </div>
+              <div>
+                <label for="resampledJsonDirInput">Dossier JSON cible</label>
+                <input id="resampledJsonDirInput" value="app_v2/data/resampled_json">
+              </div>
+            </div>
+            <div class="row">
+              <button type="button" id="finalizeAnalysisBtn">Créer l'analyse</button>
+              <button type="button" id="cancelResamplingBtn" class="secondary" disabled>Stop</button>
+            </div>
+            <div id="resamplingProgress" class="progress-block hidden" aria-live="polite">
+              <div class="progress-header">
+                <span>Export JSON en cours</span>
+                <span id="resamplingProgressLabel">Préparation</span>
+              </div>
+              <div class="progress-track" role="progressbar" aria-label="Export JSON">
+                <div class="progress-fill"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="panel">
+          <h2>Fichiers rattachés</h2>
+          <div id="filesTable"></div>
+        </div>
+        <div class="panel">
+          <h2>Événements</h2>
+          <div id="eventsTable"></div>
+        </div>
+      </section>
+
+      <section class="view" id="view-choice">
+        <div class="grid-2 analysis-choice-layout">
+          <div class="panel stack">
+            <h2>Choix analyse</h2>
+            <div id="analysisChoiceList"></div>
+          </div>
+          <div class="panel stack">
+            <h2>Résumé analyse</h2>
+            <div id="analysisChoiceSummary"></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="view" id="view-exploration">
+        <div class="exploration-layout">
+          <div class="panel stack">
+            <h2>Exploration</h2>
+            <div>
+              <label for="explorationFileSelect">Fichier</label>
+              <select id="explorationFileSelect"></select>
+            </div>
+            <div class="row">
+              <button type="button" id="explorationPrevBtn" class="secondary">Précédent</button>
+              <button type="button" id="explorationNextBtn" class="secondary">Suivant</button>
+            </div>
+            <div>
+              <label for="explorationChannelSelect">Canaux resamplés</label>
+              <select id="explorationChannelSelect" multiple size="8"></select>
+              <div class="muted">Maximum 2 canaux affichés.</div>
+            </div>
+            <div>
+              <label for="explorationMaxPointsInput">Nb max de points signal / trajectoire</label>
+              <input id="explorationMaxPointsInput" type="number" value="8000" min="100" max="50000" step="100">
+            </div>
+            <label class="row">
+              <input id="explorationMultiAxisInput" type="checkbox" checked style="width:auto">
+              <span>Une échelle par canal</span>
+            </label>
+            <div>
+              <label for="explorationSegmentSourceSelect">Filtrer par segments</label>
+              <select id="explorationSegmentSourceSelect">
+                <option value="none" selected>Aucun filtre segment</option>
+                <option value="annotations">Annotations uniquement</option>
+                <option value="cnn">Prédictions CNN uniquement</option>
+                <option value="annotations_cnn">Annotations + prédictions CNN</option>
+              </select>
+            </div>
+            <div>
+              <label for="explorationLabelSelect">Label</label>
+              <select id="explorationLabelSelect">
+                <option value="">Tous les labels</option>
+              </select>
+            </div>
+            <div id="explorationStatus" class="status-text">Sélectionne une analyse avec des JSON exportés.</div>
+          </div>
+          <div class="stack">
+            <div class="panel">
+              <h2>Signaux rééchantillonnés</h2>
+              <div id="explorationSignalPlot" class="plot-panel"></div>
+            </div>
+            <div class="panel">
+              <h2>Trajectoire GPS</h2>
+              <div id="explorationTrajectoryPlot" class="plot-panel"></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="view" id="view-annotations">
+        <div class="panel roadmap">
+          <h2>Annotations versionnées</h2>
+          <div class="roadmap-item">
+            <strong>API prévue</strong>
+            <div class="code">GET /api/analyses/{analysis_id}/annotation-sets</div>
+            <div class="code">GET /api/analyses/{analysis_id}/annotations</div>
+            <div class="code">POST /api/analyses/{analysis_id}/annotations/{annotation_id}/versions</div>
+          </div>
+          <div class="muted">Chaque annotation sera rattachée à un fichier et versionnée.</div>
+        </div>
+      </section>
+
+      <section class="view" id="view-rollover">
+        <div class="panel roadmap">
+          <h2>Retournement</h2>
+          <div class="roadmap-item">
+            <strong>API prévue</strong>
+            <div class="code">POST /api/analyses/{analysis_id}/rollover/analyze</div>
+            <div class="code">GET /api/analyses/{analysis_id}/rollover</div>
+            <div class="code">POST /api/analyses/{analysis_id}/rollover/{result_id}/versions</div>
+          </div>
+          <div class="muted">Tâche métier rattachée à l'analyse, un fichier et éventuellement une version d'annotation.</div>
+        </div>
+      </section>
+
+      <section class="view" id="view-models">
+        <div class="panel roadmap">
+          <h2>Modèles, poids et prédictions</h2>
+          <div class="roadmap-item">
+            <strong>API prévue</strong>
+            <div class="code">GET /api/analyses/{analysis_id}/models</div>
+            <div class="code">POST /api/analyses/{analysis_id}/models/{model_id}/train</div>
+            <div class="code">GET /api/analyses/{analysis_id}/model-versions/{model_version_id}/predictions</div>
+          </div>
+          <div class="muted">Les poids resteront sur disque local, mais toujours indexés dans SQLite via une version de modèle.</div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script src="/static/app.js?v=20260724-12"></script>
+</body>
+</html>
