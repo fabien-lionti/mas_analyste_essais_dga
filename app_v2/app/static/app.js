@@ -177,10 +177,13 @@ function renderAnalysisChoice() {
     list.innerHTML = `
       <div class="choice-list">
         ${state.analyses.map(item => `
-          <button type="button" class="choice-item ${item.analysis_id === currentAnalysisId() ? "active" : ""}" data-analysis-id="${escapeHtml(item.analysis_id)}">
-            <span>${escapeHtml(item.name)}</span>
-            <span class="muted">${escapeHtml(item.kind)}</span>
-          </button>
+          <div class="choice-row ${item.analysis_id === currentAnalysisId() ? "active" : ""}">
+            <button type="button" class="choice-item" data-analysis-id="${escapeHtml(item.analysis_id)}">
+              <span>${escapeHtml(item.name)}</span>
+              <span class="muted">${escapeHtml(item.kind)}</span>
+            </button>
+            <button type="button" class="danger choice-delete" data-delete-analysis-id="${escapeHtml(item.analysis_id)}">Supprimer</button>
+          </div>
         `).join("")}
       </div>
     `;
@@ -770,11 +773,11 @@ async function createAnalysis() {
   }
 }
 
-async function deleteCurrentAnalysis() {
-  const analysisId = currentAnalysisId();
-  if (!analysisId) throw new Error("Aucune analyse active");
-  const name = state.analysis?.name || analysisId;
-  if (!window.confirm(`Supprimer l'analyse "${name}" et toutes ses donnees rattachees ?`)) {
+async function deleteAnalysisById(analysisId) {
+  if (!analysisId) throw new Error("Aucune analyse sélectionnée");
+  const analysis = state.analyses.find(item => item.analysis_id === analysisId);
+  const name = analysis?.name || state.analysis?.name || analysisId;
+  if (!window.confirm(`Supprimer l'analyse "${name}" et toutes ses données rattachées ?`)) {
     setStatus("Suppression annulée");
     return;
   }
@@ -1031,6 +1034,11 @@ function bindActions() {
     showWorkflowStep(button.dataset.workflowStep);
   });
   $("analysisChoiceList")?.addEventListener("click", event => {
+    const deleteButton = event.target.closest("button[data-delete-analysis-id]");
+    if (deleteButton) {
+      wrapAction(() => deleteAnalysisById(deleteButton.dataset.deleteAnalysisId), "Analyse supprimée")();
+      return;
+    }
     const button = event.target.closest("button[data-analysis-id]");
     if (!button) return;
     wrapAction(() => loadAnalysis(button.dataset.analysisId), "Analyse chargée")();

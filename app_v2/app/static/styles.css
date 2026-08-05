@@ -56,6 +56,16 @@ button.secondary:hover {
   background: var(--panel-soft);
 }
 
+button.danger {
+  background: #fff7f6;
+  color: var(--red);
+  border-color: #f4c7c3;
+}
+
+button.danger:hover {
+  background: #fde7e4;
+}
+
 .link-button {
   border: 0;
   background: transparent;
@@ -272,11 +282,14 @@ main {
   gap: 7px;
 }
 
-.choice-item {
+.choice-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 10px;
   align-items: center;
+}
+
+.choice-item {
   width: 100%;
   border-color: var(--border);
   background: white;
@@ -284,10 +297,14 @@ main {
   text-align: left;
 }
 
-.choice-item.active {
+.choice-row.active .choice-item {
   border-color: #b9d4ff;
   background: #e8f1ff;
   color: var(--accent-dark);
+}
+
+.choice-delete {
+  white-space: nowrap;
 }
 
 .summary-grid {
