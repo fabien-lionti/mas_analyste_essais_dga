@@ -26,6 +26,8 @@ CREATE TABLE IF NOT EXISTS analysis_files (
   resampled_json_path TEXT,
   resampled_json_name TEXT,
   status TEXT NOT NULL,
+  recorded_at TEXT,
+  duration_sec REAL,
   metadata_json TEXT NOT NULL,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,

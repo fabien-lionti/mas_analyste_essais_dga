@@ -30,6 +30,27 @@ def test_root_serves_ui_html():
     assert 'id="explorationFileSelect"' in html
     assert 'id="explorationSignalPlot"' in html
     assert 'id="explorationTrajectoryPlot"' in html
+    assert 'id="explorationTabs"' in html
+    assert 'data-exploration-step="temporal"' in html
+    assert 'data-exploration-step="parametric"' in html
+    assert 'data-exploration-step="temporal-drift"' not in html
+    assert "Vision temporelle par signal" in html
+    assert "Vision paramétrique" in html
+    assert "Drift temporel" not in html
+    assert 'id="explorationDateFromInput"' in html
+    assert 'id="explorationDateToInput"' in html
+    assert 'id="explorationDateRangeStatus"' in html
+    assert 'id="parametricScopeSelect"' in html
+    assert 'id="parametricDateFromInput"' in html
+    assert 'id="parametricDateToInput"' in html
+    assert 'id="parametricFileControls"' in html
+    assert 'id="parametricFileSelect"' in html
+    assert 'id="parametricPrevBtn"' in html
+    assert 'id="parametricNextBtn"' in html
+    assert 'id="parametricChannelSelect"' in html
+    assert 'id="parametricXChannelSelect"' not in html
+    assert 'id="parametricYChannelSelect"' not in html
+    assert 'id="parametricPlot"' in html
     assert "GET /api/analyses/{analysis_id}/exploration/signals/boxplot" not in html
 
 
@@ -52,6 +73,8 @@ def test_registered_routes_include_ui_and_current_api():
     assert "/api/analyses/{analysis_id}/resampling/tasks/{task_id}/cancel" in paths
     assert "/api/analyses/{analysis_id}/exploration/files" in paths
     assert "/api/analyses/{analysis_id}/exploration/labels" in paths
+    assert "/api/analyses/{analysis_id}/exploration/date-range" in paths
+    assert "/api/analyses/{analysis_id}/exploration/parametric" in paths
     assert "/api/analyses/{analysis_id}/exploration/files/{file_id}/signals/options" in paths
     assert "/api/analyses/{analysis_id}/exploration/files/{file_id}/series" in paths
     assert "/api/analyses/{analysis_id}/exploration/files/{file_id}/trajectory" in paths

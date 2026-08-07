@@ -5,7 +5,13 @@ from pathlib import Path
 from app_v2.app.db.connection import connect, init_db
 from app_v2.app.db.repositories.analyses import create_analysis, delete_analysis, get_analysis, list_analyses
 from app_v2.app.db.repositories.events import list_events
-from app_v2.app.db.repositories.files import discover_dxd_files, get_analysis_file, list_analysis_files
+from app_v2.app.db.repositories.files import (
+    discover_dxd_files,
+    get_analysis_file,
+    get_recorded_at_range,
+    list_analysis_files,
+    update_file_resampled_json,
+)
 
 
 def test_create_and_get_analysis(tmp_path: Path):
@@ -61,6 +67,8 @@ def test_discover_dxd_files_is_analysis_scoped_and_idempotent(tmp_path: Path):
         loaded_file = get_analysis_file(conn, analysis_id, files[0]["file_id"])
         assert loaded_file is not None
         assert loaded_file["source_dxd_name"] == "run_001.dxd"
+        assert loaded_file["recorded_at"] == loaded_file["metadata"]["modified_at"]
+        assert loaded_file["duration_sec"] is None
         assert loaded_file["metadata"]["size_bytes"] == 3
 
         second = discover_dxd_files(conn, analysis_id=analysis_id, dxd_dir=dxd_dir)
@@ -133,3 +141,75 @@ def test_delete_analysis_cascades_related_rows(tmp_path: Path):
         ).fetchone()[0] == 0
         assert list_events(conn, analysis_id) == []
         assert delete_analysis(conn, analysis_id) is False
+
+
+def test_file_recorded_at_filters_and_resampling_duration(tmp_path: Path):
+    db_path = tmp_path / "test.sqlite"
+    dxd_dir = tmp_path / "dxd"
+    json_dir = tmp_path / "json"
+    dxd_dir.mkdir()
+    json_dir.mkdir()
+    (dxd_dir / "run_001.dxd").write_bytes(b"one")
+    (dxd_dir / "run_002.dxd").write_bytes(b"two")
+    json_path = json_dir / "run_001.json"
+    json_path.write_text("{}", encoding="utf-8")
+
+    with connect(db_path) as conn:
+        init_db(conn)
+        analysis = create_analysis(conn, name="Dates")
+        analysis_id = analysis["analysis_id"]
+        discover_dxd_files(conn, analysis_id=analysis_id, dxd_dir=dxd_dir)
+        files = list_analysis_files(conn, analysis_id)
+
+        conn.execute(
+            "UPDATE analysis_files SET recorded_at = ? WHERE file_id = ?",
+            ("2025-04-24T10:00:00+00:00", files[0]["file_id"]),
+        )
+        conn.execute(
+            "UPDATE analysis_files SET recorded_at = ? WHERE file_id = ?",
+            ("2025-05-02T10:00:00+00:00", files[1]["file_id"]),
+        )
+        update_file_resampled_json(
+            conn,
+            analysis_id=analysis_id,
+            file_id=files[0]["file_id"],
+            json_path=json_path,
+            metadata={"resampling": {"duration_sec": 42.5}},
+        )
+        conn.commit()
+
+        april_files = list_analysis_files(conn, analysis_id, date_from="2025-04-01", date_to="2025-04-30")
+        assert [item["file_id"] for item in april_files] == [files[0]["file_id"]]
+        loaded = get_analysis_file(conn, analysis_id, files[0]["file_id"])
+        assert loaded is not None
+        assert loaded["duration_sec"] == 42.5
+        date_range = get_recorded_at_range(conn, analysis_id)
+        assert date_range["date_min"] == "2025-04-24"
+        assert date_range["date_max"] == "2025-04-24"
+        assert date_range["dated_file_count"] == 1
+        assert date_range["dates"] == ["2025-04-24"]
+
+
+def test_init_db_migrates_existing_analysis_files_table(tmp_path: Path):
+    db_path = tmp_path / "legacy.sqlite"
+    with connect(db_path) as conn:
+        conn.execute(
+            """
+            CREATE TABLE analysis_files (
+              file_id TEXT PRIMARY KEY,
+              analysis_id TEXT NOT NULL,
+              source_dxd_path TEXT NOT NULL,
+              source_dxd_name TEXT NOT NULL,
+              resampled_json_path TEXT,
+              resampled_json_name TEXT,
+              status TEXT NOT NULL,
+              metadata_json TEXT NOT NULL,
+              created_at TEXT NOT NULL,
+              updated_at TEXT NOT NULL
+            )
+            """
+        )
+        init_db(conn)
+        columns = {row["name"] for row in conn.execute("PRAGMA table_info(analysis_files)")}
+        assert "recorded_at" in columns
+        assert "duration_sec" in columns

@@ -186,55 +186,136 @@
       </section>
 
       <section class="view" id="view-exploration">
-        <div class="exploration-layout">
-          <div class="panel stack">
-            <h2>Exploration</h2>
-            <div>
-              <label for="explorationFileSelect">Fichier</label>
-              <select id="explorationFileSelect"></select>
-            </div>
-            <div class="row">
-              <button type="button" id="explorationPrevBtn" class="secondary">Précédent</button>
-              <button type="button" id="explorationNextBtn" class="secondary">Suivant</button>
-            </div>
-            <div>
-              <label for="explorationChannelSelect">Canaux resamplés</label>
-              <select id="explorationChannelSelect" multiple size="8"></select>
-              <div class="muted">Maximum 2 canaux affichés.</div>
-            </div>
-            <div>
-              <label for="explorationMaxPointsInput">Nb max de points signal / trajectoire</label>
-              <input id="explorationMaxPointsInput" type="number" value="8000" min="100" max="50000" step="100">
-            </div>
-            <label class="row">
-              <input id="explorationMultiAxisInput" type="checkbox" checked style="width:auto">
-              <span>Une échelle par canal</span>
-            </label>
-            <div>
-              <label for="explorationSegmentSourceSelect">Filtrer par segments</label>
-              <select id="explorationSegmentSourceSelect">
-                <option value="none" selected>Aucun filtre segment</option>
-                <option value="annotations">Annotations uniquement</option>
-                <option value="cnn">Prédictions CNN uniquement</option>
-                <option value="annotations_cnn">Annotations + prédictions CNN</option>
-              </select>
-            </div>
-            <div>
-              <label for="explorationLabelSelect">Label</label>
-              <select id="explorationLabelSelect">
-                <option value="">Tous les labels</option>
-              </select>
-            </div>
-            <div id="explorationStatus" class="status-text">Sélectionne une analyse avec des JSON exportés.</div>
+        <div class="panel stack">
+          <h2>Exploration</h2>
+          <div class="subtabs" id="explorationTabs">
+            <button type="button" class="active" data-exploration-step="temporal">1. Vision temporelle</button>
+            <button type="button" data-exploration-step="parametric">2. Vision paramétrique</button>
           </div>
-          <div class="stack">
-            <div class="panel">
-              <h2>Signaux rééchantillonnés</h2>
-              <div id="explorationSignalPlot" class="plot-panel"></div>
+        </div>
+        <div class="exploration-step active" id="exploration-temporal">
+          <div class="exploration-layout">
+            <div class="panel stack">
+              <h2>Vision temporelle par signal</h2>
+              <div class="grid-2">
+                <div>
+                  <label for="explorationDateFromInput">Date début</label>
+                  <select id="explorationDateFromInput">
+                    <option value="">Toutes les dates</option>
+                  </select>
+                </div>
+                <div>
+                  <label for="explorationDateToInput">Date fin</label>
+                  <select id="explorationDateToInput">
+                    <option value="">Toutes les dates</option>
+                  </select>
+                </div>
+              </div>
+              <div id="explorationDateRangeStatus" class="muted">Dates disponibles non chargées.</div>
+              <div>
+                <label for="explorationFileSelect">Fichier</label>
+                <select id="explorationFileSelect"></select>
+              </div>
+              <div class="row">
+                <button type="button" id="explorationPrevBtn" class="secondary">Précédent</button>
+                <button type="button" id="explorationNextBtn" class="secondary">Suivant</button>
+              </div>
+              <div>
+                <label for="explorationChannelSelect">Canaux resamplés</label>
+                <select id="explorationChannelSelect" multiple size="8"></select>
+                <div class="muted">Maximum 2 canaux affichés.</div>
+              </div>
+              <div>
+                <label for="explorationMaxPointsInput">Nb max de points signal / trajectoire</label>
+                <input id="explorationMaxPointsInput" type="number" value="8000" min="100" max="50000" step="100">
+              </div>
+              <label class="row">
+                <input id="explorationMultiAxisInput" type="checkbox" checked style="width:auto">
+                <span>Une échelle par canal</span>
+              </label>
+              <div>
+                <label for="explorationSegmentSourceSelect">Filtrer par segments</label>
+                <select id="explorationSegmentSourceSelect">
+                  <option value="none" selected>Aucun filtre segment</option>
+                  <option value="annotations">Annotations uniquement</option>
+                  <option value="cnn">Prédictions CNN uniquement</option>
+                  <option value="annotations_cnn">Annotations + prédictions CNN</option>
+                </select>
+              </div>
+              <div>
+                <label for="explorationLabelSelect">Label</label>
+                <select id="explorationLabelSelect">
+                  <option value="">Tous les labels</option>
+                </select>
+              </div>
+              <div id="explorationStatus" class="status-text">Sélectionne une analyse avec des JSON exportés.</div>
+            </div>
+            <div class="stack">
+              <div class="panel">
+                <h2>Signaux rééchantillonnés</h2>
+                <div id="explorationSignalPlot" class="plot-panel"></div>
+              </div>
+              <div class="panel">
+                <h2>Trajectoire GPS</h2>
+                <div id="explorationTrajectoryPlot" class="plot-panel"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="exploration-step" id="exploration-parametric">
+          <div class="exploration-layout">
+            <div class="panel stack">
+              <h2>Vision paramétrique</h2>
+              <div class="grid-2">
+                <div>
+                  <label for="parametricDateFromInput">Date début</label>
+                  <select id="parametricDateFromInput">
+                    <option value="">Toutes les dates</option>
+                  </select>
+                </div>
+                <div>
+                  <label for="parametricDateToInput">Date fin</label>
+                  <select id="parametricDateToInput">
+                    <option value="">Toutes les dates</option>
+                  </select>
+                </div>
+              </div>
+              <div id="parametricDateRangeStatus" class="muted">Dates disponibles non chargées.</div>
+              <div id="parametricFileControls" class="stack">
+                <div>
+                  <label for="parametricFileSelect">Fichier</label>
+                  <select id="parametricFileSelect"></select>
+                </div>
+                <div class="row">
+                  <button type="button" id="parametricPrevBtn" class="secondary">Précédent</button>
+                  <button type="button" id="parametricNextBtn" class="secondary">Suivant</button>
+                </div>
+              </div>
+              <div>
+                <label for="parametricScopeSelect">Portée</label>
+                <select id="parametricScopeSelect">
+                  <option value="current">Fichier courant</option>
+                  <option value="filtered">Fichiers filtrés</option>
+                </select>
+              </div>
+              <div>
+                <label for="parametricChannelSelect">Canaux resamplés</label>
+                <select id="parametricChannelSelect" multiple size="8"></select>
+                <div class="muted">Maximum 2 canaux. 1er canal = axe X, 2e canal = axe Y.</div>
+              </div>
+              <div>
+                <label for="parametricMaxPointsInput">Nb max de points</label>
+                <input id="parametricMaxPointsInput" type="number" value="3000" min="100" max="50000" step="100">
+              </div>
+              <label class="row">
+                <input id="parametricScatterInput" type="checkbox" checked style="width:auto">
+                <span>Nuage de points</span>
+              </label>
+              <div id="parametricStatus" class="status-text">Choisis deux canaux pour tracer la vision paramétrique.</div>
             </div>
             <div class="panel">
-              <h2>Trajectoire GPS</h2>
-              <div id="explorationTrajectoryPlot" class="plot-panel"></div>
+              <h2>Distribution paramétrique</h2>
+              <div id="parametricPlot" class="plot-panel"></div>
             </div>
           </div>
         </div>

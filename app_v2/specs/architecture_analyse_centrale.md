@@ -250,6 +250,8 @@ CREATE TABLE analysis_files (
   resampled_json_path TEXT,
   resampled_json_name TEXT,
   status TEXT NOT NULL,
+  recorded_at TEXT,
+  duration_sec REAL,
   metadata_json TEXT NOT NULL,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
@@ -260,6 +262,14 @@ CREATE TABLE analysis_files (
 `resampled_json_path` et `resampled_json_name` referencent le JSON exporte pour ce
 fichier dans le contexte de l'analyse courante. Un meme `.dxd` peut donc etre
 utilise dans plusieurs analyses avec des exports JSON differents.
+
+`recorded_at` porte la date/heure metier de l'acquisition quand elle est connue.
+Elle doit provenir des metadonnees du fichier ou d'une source d'import explicite,
+pas du nom du fichier. `duration_sec` porte la duree exploitable du fichier,
+alimentee notamment par l'export JSON resample. `metadata_json.modified_at`
+reste une metadonnee filesystem. Tant qu'une date d'acquisition DXD plus fiable
+n'est pas extraite, l'interface peut l'utiliser comme borne de filtrage explicite,
+mais elle ne doit jamais deduire une date depuis le nom du fichier.
 
 ### channel_structures
 

@@ -21,7 +21,12 @@ const state = {
   explorationFiles: [],
   explorationChannels: [],
   explorationFileId: "",
+  parametricFiles: [],
+  parametricChannels: [],
+  parametricFileId: "",
 };
+
+let explorationDateFilterTimer = null;
 
 const $ = id => document.getElementById(id);
 
@@ -123,6 +128,14 @@ function showWorkflowStep(step) {
   $(`workflow-${target}`)?.classList.add("active");
 }
 
+function showExplorationStep(step) {
+  document.querySelectorAll("[data-exploration-step]").forEach(button => {
+    button.classList.toggle("active", button.dataset.explorationStep === step);
+  });
+  document.querySelectorAll(".exploration-step").forEach(item => item.classList.remove("active"));
+  $(`exploration-${step}`)?.classList.add("active");
+}
+
 function renderWorkflowState() {
   const stateNode = $("workflowSourceState");
   if (stateNode) {
@@ -205,6 +218,11 @@ function setExplorationStatus(message) {
   if (node) node.textContent = message;
 }
 
+function setParametricStatus(message) {
+  const node = $("parametricStatus");
+  if (node) node.textContent = message;
+}
+
 function plotlyLayout(title, ytitle = "") {
   return {
     title: { text: title, font: { color: "#17202c", size: 13 } },
@@ -246,10 +264,52 @@ function renderExplorationChannelOptions(previous = []) {
   Array.from(select.options).forEach(option => {
     option.selected = selected.includes(option.value);
   });
+  renderParametricChannelOptions();
+}
+
+function renderParametricChannelOptions() {
+  const select = $("parametricChannelSelect");
+  if (!select) return;
+  const previous = selectedParametricChannels();
+  const channels = state.parametricChannels.length ? state.parametricChannels : state.explorationChannels;
+  select.innerHTML = channels.map(channel => `
+    <option value="${escapeHtml(channel.value)}">${escapeHtml(channel.label || channel.value)}</option>
+  `).join("");
+  const values = channels.map(channel => channel.value);
+  const selected = previous.length
+    ? previous.filter(channel => values.includes(channel)).slice(0, 2)
+    : values.slice(0, 2);
+  Array.from(select.options).forEach(option => {
+    option.selected = selected.includes(option.value);
+  });
+}
+
+function renderParametricFileOptions() {
+  const select = $("parametricFileSelect");
+  if (!select) return;
+  select.innerHTML = state.parametricFiles.length
+    ? state.parametricFiles.map(file => `
+      <option value="${escapeHtml(file.file_id)}">${escapeHtml(file.resampled_json_name || file.source_dxd_name)}</option>
+    `).join("")
+    : '<option value="">Aucun JSON exporté</option>';
+  if (state.parametricFileId && state.parametricFiles.some(file => file.file_id === state.parametricFileId)) {
+    select.value = state.parametricFileId;
+  } else if (state.parametricFiles.length) {
+    state.parametricFileId = state.parametricFiles[0].file_id;
+    select.value = state.parametricFileId;
+  } else {
+    state.parametricFileId = "";
+  }
 }
 
 function selectedExplorationChannels() {
   return Array.from($("explorationChannelSelect")?.selectedOptions || [])
+    .map(option => option.value)
+    .slice(0, 2);
+}
+
+function selectedParametricChannels() {
+  return Array.from($("parametricChannelSelect")?.selectedOptions || [])
     .map(option => option.value)
     .slice(0, 2);
 }
@@ -266,6 +326,20 @@ function clampExplorationChannelSelection() {
     option.selected = keep.has(option.value);
   });
   setExplorationStatus("Maximum 2 canaux affichables en même temps.");
+}
+
+function clampParametricChannelSelection() {
+  const select = $("parametricChannelSelect");
+  if (!select) return;
+  const selected = Array.from(select.options)
+    .filter(option => option.selected)
+    .map(option => option.value);
+  if (selected.length <= 2) return;
+  const keep = new Set(selected.slice(-2));
+  Array.from(select.options).forEach(option => {
+    option.selected = keep.has(option.value);
+  });
+  setParametricStatus("Maximum 2 canaux affichables en même temps.");
 }
 
 function renderExplorationLabels() {
@@ -344,14 +418,50 @@ function drawTrajectoryPlot(payload) {
   Plotly.react("explorationTrajectoryPlot", [trace], layout, { responsive: true, displaylogo: false });
 }
 
+function drawParametricPlot(payload) {
+  if (!window.Plotly) return;
+  const items = payload.items || [];
+  if (!items.length) {
+    drawEmptyPlot("parametricPlot", "Aucun point disponible");
+    return;
+  }
+  const scatterMode = $("parametricScatterInput")?.checked !== false;
+  const trace = {
+    type: "scattergl",
+    mode: scatterMode ? "markers" : "lines",
+    name: `${payload.y_channel} / ${payload.x_channel}`,
+    x: items.map(item => item.x),
+    y: items.map(item => item.y),
+    text: items.map(item => item.file_name),
+    marker: { color: "#1368ce", size: 4, opacity: 0.55 },
+    line: { color: "#1368ce", width: 1.3 },
+    hovertemplate: "x=%{x:.4g}<br>y=%{y:.4g}<br>%{text}<extra></extra>",
+  };
+  const layout = plotlyLayout("Vision paramétrique", payload.y_channel);
+  layout.xaxis.title = payload.x_channel;
+  Plotly.react("parametricPlot", [trace], layout, { responsive: true, displaylogo: false });
+}
+
 async function loadExplorationFiles() {
   const analysisId = currentAnalysisId();
   if (!analysisId) return;
   try {
-    const payload = await api(`/api/analyses/${encodeURIComponent(analysisId)}/exploration/files`);
+    const params = new URLSearchParams();
+    const dateFrom = $("explorationDateFromInput")?.value;
+    const dateTo = $("explorationDateToInput")?.value;
+    if (dateFrom) params.set("date_from", dateFrom);
+    if (dateTo) params.set("date_to", dateTo);
+    const query = params.toString();
+    const payload = await api(
+      `/api/analyses/${encodeURIComponent(analysisId)}/exploration/files${query ? `?${query}` : ""}`
+    );
     state.explorationFiles = payload.items || [];
     renderExplorationFileOptions();
     renderExplorationLabels();
+    const dateStatus = $("explorationDateRangeStatus");
+    if (dateStatus && (dateFrom || dateTo)) {
+      dateStatus.textContent = `${state.explorationFiles.length} fichier(s) dans la plage sélectionnée.`;
+    }
     if (state.explorationFileId) {
       await loadExplorationChannels();
       await refreshExploration();
@@ -367,6 +477,64 @@ async function loadExplorationFiles() {
   }
 }
 
+async function loadExplorationDateRange() {
+  const analysisId = currentAnalysisId();
+  const fromInput = $("explorationDateFromInput");
+  const toInput = $("explorationDateToInput");
+  const status = $("explorationDateRangeStatus");
+  if (!analysisId || !fromInput || !toInput) return;
+  const payload = await api(`/api/analyses/${encodeURIComponent(analysisId)}/exploration/date-range`);
+  renderDateRangeControls(payload, fromInput, toInput, status);
+}
+
+async function loadParametricDateRange() {
+  const analysisId = currentAnalysisId();
+  const fromInput = $("parametricDateFromInput");
+  const toInput = $("parametricDateToInput");
+  const status = $("parametricDateRangeStatus");
+  if (!analysisId || !fromInput || !toInput) return;
+  const payload = await api(`/api/analyses/${encodeURIComponent(analysisId)}/exploration/date-range`);
+  renderDateRangeControls(payload, fromInput, toInput, status);
+}
+
+function renderDateRangeControls(payload, fromInput, toInput, status) {
+  const dates = payload.dates || [];
+  renderExplorationDateOptions(fromInput, dates, "Toutes les dates");
+  renderExplorationDateOptions(toInput, dates, "Toutes les dates");
+  if (status) {
+    status.textContent = payload.date_min && payload.date_max
+      ? `Dates disponibles: ${payload.date_min} à ${payload.date_max}`
+      : "Aucune plage de dates disponible dans les métadonnées.";
+  }
+}
+
+function renderExplorationDateOptions(select, dates, emptyLabel) {
+  const previous = select.value;
+  select.innerHTML = [
+    `<option value="">${escapeHtml(emptyLabel)}</option>`,
+    ...dates.map(date => `<option value="${escapeHtml(date)}">${escapeHtml(date)}</option>`),
+  ].join("");
+  select.value = dates.includes(previous) ? previous : "";
+}
+
+function scheduleExplorationDateFilter() {
+  if (explorationDateFilterTimer) {
+    clearTimeout(explorationDateFilterTimer);
+  }
+  explorationDateFilterTimer = setTimeout(async () => {
+    explorationDateFilterTimer = null;
+    try {
+      await loadExplorationFiles();
+      if ($("parametricScopeSelect")?.value === "filtered") {
+        await refreshParametric();
+      }
+    } catch (error) {
+      setExplorationStatus(`Erreur filtre date:\n${error.message || String(error)}`);
+      setStatus(error.message || String(error), "error");
+    }
+  }, 80);
+}
+
 async function loadExplorationChannels() {
   const analysisId = currentAnalysisId();
   const fileId = state.explorationFileId || $("explorationFileSelect")?.value;
@@ -375,6 +543,42 @@ async function loadExplorationChannels() {
   const payload = await api(`/api/analyses/${encodeURIComponent(analysisId)}/exploration/files/${encodeURIComponent(fileId)}/signals/options`);
   state.explorationChannels = (payload.items || []).filter(item => item.available);
   renderExplorationChannelOptions(previous);
+}
+
+async function loadParametricFiles() {
+  const analysisId = currentAnalysisId();
+  if (!analysisId) return;
+  const params = new URLSearchParams();
+  const dateFrom = $("parametricDateFromInput")?.value;
+  const dateTo = $("parametricDateToInput")?.value;
+  if (dateFrom) params.set("date_from", dateFrom);
+  if (dateTo) params.set("date_to", dateTo);
+  const query = params.toString();
+  const payload = await api(
+    `/api/analyses/${encodeURIComponent(analysisId)}/exploration/files${query ? `?${query}` : ""}`
+  );
+  state.parametricFiles = payload.items || [];
+  renderParametricFileOptions();
+  const dateStatus = $("parametricDateRangeStatus");
+  if (dateStatus && (dateFrom || dateTo)) {
+    dateStatus.textContent = `${state.parametricFiles.length} fichier(s) dans la plage sélectionnée.`;
+  }
+  if (state.parametricFileId) {
+    await loadParametricChannels();
+  } else {
+    state.parametricChannels = [];
+    renderParametricChannelOptions();
+    drawEmptyPlot("parametricPlot", "Aucune donnée");
+  }
+}
+
+async function loadParametricChannels() {
+  const analysisId = currentAnalysisId();
+  const fileId = state.parametricFileId || $("parametricFileSelect")?.value || state.explorationFileId;
+  if (!analysisId || !fileId) return;
+  const payload = await api(`/api/analyses/${encodeURIComponent(analysisId)}/exploration/files/${encodeURIComponent(fileId)}/signals/options`);
+  state.parametricChannels = (payload.items || []).filter(item => item.available);
+  renderParametricChannelOptions();
 }
 
 async function refreshExploration() {
@@ -409,12 +613,73 @@ async function refreshExploration() {
   ].join("\n"));
 }
 
+async function refreshParametric() {
+  const analysisId = currentAnalysisId();
+  const scope = $("parametricScopeSelect")?.value || "current";
+  const fileId = state.parametricFileId || $("parametricFileSelect")?.value || state.explorationFileId;
+  updateParametricScopeUi();
+  if (!analysisId || !fileId) {
+    setParametricStatus("Sélectionne une analyse avec des JSON exportés.");
+    drawEmptyPlot("parametricPlot", "Aucune donnée");
+    return;
+  }
+  if (!state.parametricChannels.length) {
+    await loadParametricChannels();
+  }
+  const [xChannel, yChannel] = selectedParametricChannels();
+  if (!xChannel || !yChannel) {
+    setParametricStatus("Choisis deux canaux pour tracer la vision paramétrique.");
+    drawEmptyPlot("parametricPlot", "Canaux manquants");
+    return;
+  }
+  const params = new URLSearchParams({
+    scope,
+    x_channel: xChannel,
+    y_channel: yChannel,
+    max_points: $("parametricMaxPointsInput")?.value || "8000",
+  });
+  if (scope === "current") {
+    params.set("file_id", fileId);
+  } else {
+    const dateFrom = $("parametricDateFromInput")?.value;
+    const dateTo = $("parametricDateToInput")?.value;
+    if (dateFrom) params.set("date_from", dateFrom);
+    if (dateTo) params.set("date_to", dateTo);
+  }
+  setParametricStatus("Chargement de la distribution paramétrique...");
+  const payload = await api(`/api/analyses/${encodeURIComponent(analysisId)}/exploration/parametric?${params.toString()}`);
+  drawParametricPlot(payload);
+  setParametricStatus([
+    `Portée: ${scope === "current" ? "fichier courant" : "fichiers filtrés"}`,
+    `Fichiers: ${payload.file_count}`,
+    `Points: ${payload.returned_point_count} / ${payload.point_count}`,
+    `Canaux: ${payload.x_channel} -> ${payload.y_channel}`,
+  ].join("\n"));
+}
+
+function updateParametricScopeUi() {
+  const controls = $("parametricFileControls");
+  if (!controls) return;
+  const isFiltered = $("parametricScopeSelect")?.value === "filtered";
+  controls.classList.toggle("hidden", isFiltered);
+}
+
 async function refreshExplorationFromChannelSelection() {
   try {
     clampExplorationChannelSelection();
     await refreshExploration();
   } catch (error) {
     setExplorationStatus(`Erreur canaux:\n${error.message || String(error)}`);
+    setStatus(error.message || String(error), "error");
+  }
+}
+
+async function refreshParametricFromChannelSelection() {
+  try {
+    clampParametricChannelSelection();
+    await refreshParametric();
+  } catch (error) {
+    setParametricStatus(`Erreur canaux:\n${error.message || String(error)}`);
     setStatus(error.message || String(error), "error");
   }
 }
@@ -430,6 +695,19 @@ async function goToRelativeExplorationFile(delta) {
   $("explorationFileSelect").value = next.file_id;
   await loadExplorationChannels();
   await refreshExploration();
+}
+
+async function goToRelativeParametricFile(delta) {
+  if (!state.parametricFiles.length) return;
+  const current = state.parametricFileId || $("parametricFileSelect").value;
+  const index = Math.max(0, state.parametricFiles.findIndex(file => file.file_id === current));
+  const nextIndex = Math.max(0, Math.min(state.parametricFiles.length - 1, index + delta));
+  const next = state.parametricFiles[nextIndex];
+  if (!next || next.file_id === current) return;
+  state.parametricFileId = next.file_id;
+  $("parametricFileSelect").value = next.file_id;
+  await loadParametricChannels();
+  await refreshParametric();
 }
 
 function renderFiles() {
@@ -694,6 +972,7 @@ async function loadAnalysis(analysisId = currentAnalysisId()) {
   state.anomalies = [];
   await Promise.all([loadFiles(), loadEvents(), loadChannels()]);
   renderAll();
+  await loadExplorationDateRange();
   await loadExplorationFiles();
   resumeCurrentChannelAnalysis(analysisId);
   resumeCurrentResampling(analysisId);
@@ -1033,6 +1312,18 @@ function bindActions() {
     if (!button || button.disabled) return;
     showWorkflowStep(button.dataset.workflowStep);
   });
+  $("explorationTabs")?.addEventListener("click", event => {
+    const button = event.target.closest("button[data-exploration-step]");
+    if (!button) return;
+    showExplorationStep(button.dataset.explorationStep);
+    if (button.dataset.explorationStep === "parametric") {
+      wrapAction(async () => {
+        await loadParametricDateRange();
+        await loadParametricFiles();
+        await refreshParametric();
+      }, "Vision paramétrique chargée")();
+    }
+  });
   $("analysisChoiceList")?.addEventListener("click", event => {
     const deleteButton = event.target.closest("button[data-delete-analysis-id]");
     if (deleteButton) {
@@ -1047,33 +1338,75 @@ function bindActions() {
     state.explorationFileId = $("explorationFileSelect").value;
     await loadExplorationChannels();
     await refreshExploration();
+    await refreshParametric();
   }, "Exploration chargée"));
+  ["explorationDateFromInput", "explorationDateToInput"].forEach(id => {
+    const input = $(id);
+    ["input", "change"].forEach(eventName => {
+      input?.addEventListener(eventName, scheduleExplorationDateFilter);
+    });
+  });
   $("explorationPrevBtn")?.addEventListener("click", wrapAction(() => goToRelativeExplorationFile(-1), "Fichier précédent"));
   $("explorationNextBtn")?.addEventListener("click", wrapAction(() => goToRelativeExplorationFile(1), "Fichier suivant"));
+  $("parametricFileSelect")?.addEventListener("change", wrapAction(async () => {
+    state.parametricFileId = $("parametricFileSelect").value;
+    await loadParametricChannels();
+    await refreshParametric();
+  }, "Vision paramétrique chargée"));
+  ["parametricDateFromInput", "parametricDateToInput"].forEach(id => {
+    $(id)?.addEventListener("change", wrapAction(async () => {
+      await loadParametricFiles();
+      await refreshParametric();
+    }, "Fichiers filtrés"));
+  });
+  $("parametricPrevBtn")?.addEventListener("click", wrapAction(() => goToRelativeParametricFile(-1), "Fichier précédent"));
+  $("parametricNextBtn")?.addEventListener("click", wrapAction(() => goToRelativeParametricFile(1), "Fichier suivant"));
   const explorationChannelSelect = $("explorationChannelSelect");
   ["input", "change", "click", "mouseup", "keyup"].forEach(eventName => {
     explorationChannelSelect?.addEventListener(eventName, () => {
       setTimeout(refreshExplorationFromChannelSelection, 0);
     });
   });
+  const parametricChannelSelect = $("parametricChannelSelect");
+  ["input", "change", "click", "mouseup", "keyup"].forEach(eventName => {
+    parametricChannelSelect?.addEventListener(eventName, () => {
+      setTimeout(refreshParametricFromChannelSelection, 0);
+    });
+  });
   ["explorationMaxPointsInput", "explorationMultiAxisInput", "explorationSegmentSourceSelect", "explorationLabelSelect"].forEach(id => {
     $(id)?.addEventListener("change", wrapAction(refreshExploration, "Exploration chargée"));
+  });
+  $("parametricScopeSelect")?.addEventListener("change", wrapAction(async () => {
+    updateParametricScopeUi();
+    await refreshParametric();
+  }, "Vision paramétrique chargée"));
+  ["parametricMaxPointsInput", "parametricScatterInput"].forEach(id => {
+    $(id)?.addEventListener("change", wrapAction(refreshParametric, "Vision paramétrique chargée"));
   });
   document.addEventListener("keydown", event => {
     const activeView = document.querySelector(".view.active");
     if (!activeView || activeView.id !== "view-exploration") return;
+    const activeExplorationStep = document.querySelector(".exploration-step.active");
+    if (!activeExplorationStep || !["exploration-temporal", "exploration-parametric"].includes(activeExplorationStep.id)) return;
     if (event.target && ["INPUT", "SELECT", "TEXTAREA"].includes(event.target.tagName)) return;
+    if (activeExplorationStep.id === "exploration-parametric" && $("parametricScopeSelect")?.value === "filtered") return;
     if (event.key === "ArrowLeft") {
       event.preventDefault();
-      wrapAction(() => goToRelativeExplorationFile(-1), "Fichier précédent")();
+      const action = activeExplorationStep.id === "exploration-parametric"
+        ? () => goToRelativeParametricFile(-1)
+        : () => goToRelativeExplorationFile(-1);
+      wrapAction(action, "Fichier précédent")();
     }
     if (event.key === "ArrowRight") {
       event.preventDefault();
-      wrapAction(() => goToRelativeExplorationFile(1), "Fichier suivant")();
+      const action = activeExplorationStep.id === "exploration-parametric"
+        ? () => goToRelativeParametricFile(1)
+        : () => goToRelativeExplorationFile(1);
+      wrapAction(action, "Fichier suivant")();
     }
   });
   window.addEventListener("resize", () => {
-    ["explorationSignalPlot", "explorationTrajectoryPlot"].forEach(id => {
+    ["explorationSignalPlot", "explorationTrajectoryPlot", "parametricPlot"].forEach(id => {
       const el = $(id);
       if (el && window.Plotly) Plotly.Plots.resize(el);
     });
