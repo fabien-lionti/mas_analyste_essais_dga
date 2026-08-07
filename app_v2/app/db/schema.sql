@@ -128,3 +128,50 @@ CREATE TABLE IF NOT EXISTS channel_anomalies (
 
 CREATE INDEX IF NOT EXISTS idx_channel_anomalies_analysis_file
 ON channel_anomalies(analysis_id, file_id);
+
+CREATE TABLE IF NOT EXISTS annotation_sets (
+  annotation_set_id TEXT PRIMARY KEY,
+  analysis_id TEXT NOT NULL,
+  name TEXT NOT NULL,
+  description TEXT,
+  status TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  FOREIGN KEY (analysis_id) REFERENCES analyses(analysis_id) ON DELETE CASCADE
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_annotation_sets_analysis_name
+ON annotation_sets(analysis_id, name);
+
+CREATE TABLE IF NOT EXISTS annotations (
+  annotation_id TEXT PRIMARY KEY,
+  analysis_id TEXT NOT NULL,
+  file_id TEXT NOT NULL,
+  annotation_set_id TEXT NOT NULL,
+  start_time_sec REAL NOT NULL,
+  end_time_sec REAL NOT NULL,
+  current_version_id TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  FOREIGN KEY (analysis_id) REFERENCES analyses(analysis_id) ON DELETE CASCADE,
+  FOREIGN KEY (file_id) REFERENCES analysis_files(file_id) ON DELETE CASCADE,
+  FOREIGN KEY (annotation_set_id) REFERENCES annotation_sets(annotation_set_id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_annotations_analysis_file
+ON annotations(analysis_id, file_id, start_time_sec);
+
+CREATE TABLE IF NOT EXISTS annotation_versions (
+  annotation_version_id TEXT PRIMARY KEY,
+  annotation_id TEXT NOT NULL,
+  version_number INTEGER NOT NULL,
+  label TEXT NOT NULL,
+  confidence REAL,
+  comment TEXT,
+  metadata_json TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  FOREIGN KEY (annotation_id) REFERENCES annotations(annotation_id) ON DELETE CASCADE
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_annotation_versions_annotation_number
+ON annotation_versions(annotation_id, version_number);

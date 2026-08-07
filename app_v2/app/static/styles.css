@@ -233,6 +233,18 @@ main {
   background: transparent;
 }
 
+.segmented-control {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.segmented-control button.active {
+  border-color: #b9d4ff;
+  background: #e8f1ff;
+  color: var(--accent-dark);
+}
+
 .workflow-step {
   display: none;
   gap: 14px;
@@ -272,6 +284,25 @@ main {
   grid-template-columns: 330px minmax(0, 1fr);
   gap: 14px;
   align-items: start;
+}
+
+.annotation-layout {
+  display: grid;
+  grid-template-columns: 320px minmax(0, 1fr);
+  gap: 14px;
+  align-items: start;
+}
+
+.annotation-sidebar {
+  position: sticky;
+  top: 74px;
+  max-height: calc(100vh - 90px);
+  overflow: auto;
+}
+
+.annotation-main {
+  min-width: 0;
+  width: 100%;
 }
 
 .plot-panel {
@@ -605,7 +636,13 @@ tr:last-child td {
   .grid-2,
   .grid-3,
   .exploration-layout,
+  .annotation-layout,
   .kpis {
     grid-template-columns: 1fr;
+  }
+
+  .annotation-sidebar {
+    position: static;
+    max-height: none;
   }
 }

@@ -322,15 +322,95 @@
       </section>
 
       <section class="view" id="view-annotations">
-        <div class="panel roadmap">
-          <h2>Annotations versionnées</h2>
-          <div class="roadmap-item">
-            <strong>API prévue</strong>
-            <div class="code">GET /api/analyses/{analysis_id}/annotation-sets</div>
-            <div class="code">GET /api/analyses/{analysis_id}/annotations</div>
-            <div class="code">POST /api/analyses/{analysis_id}/annotations/{annotation_id}/versions</div>
+        <div class="annotation-layout">
+          <aside class="panel stack annotation-sidebar">
+            <h2>Annotations</h2>
+            <div class="grid-2">
+              <div>
+                <label for="annotationDateFromInput">Date début</label>
+                <select id="annotationDateFromInput">
+                  <option value="">Toutes les dates</option>
+                </select>
+              </div>
+              <div>
+                <label for="annotationDateToInput">Date fin</label>
+                <select id="annotationDateToInput">
+                  <option value="">Toutes les dates</option>
+                </select>
+              </div>
+            </div>
+            <div id="annotationDateRangeStatus" class="muted">Dates disponibles non chargées.</div>
+            <div>
+              <label for="annotationFileSelect">Fichier</label>
+              <select id="annotationFileSelect"></select>
+            </div>
+            <div class="row">
+              <button type="button" id="annotationPrevBtn" class="secondary">Précédent</button>
+              <button type="button" id="annotationNextBtn" class="secondary">Suivant</button>
+            </div>
+            <div>
+              <label for="annotationChannelSelect">Canaux resamplés</label>
+              <select id="annotationChannelSelect" multiple size="8"></select>
+              <div class="muted">Maximum 2 canaux affichés.</div>
+            </div>
+            <div>
+              <label for="annotationMaxPointsInput">Nb max de points</label>
+              <input id="annotationMaxPointsInput" type="number" value="8000" min="100" max="50000" step="100">
+            </div>
+            <div class="grid-2">
+              <div>
+                <label for="annotationStartInput">Début segment (s)</label>
+                <input id="annotationStartInput" type="number" value="0" min="0" step="0.01">
+              </div>
+              <div>
+                <label for="annotationEndInput">Fin segment (s)</label>
+                <input id="annotationEndInput" type="number" value="1" min="0" step="0.01">
+              </div>
+            </div>
+            <div>
+              <label for="annotationEndRangeInput">Ajuster fin</label>
+              <input id="annotationEndRangeInput" type="range" min="0" max="1" value="1" step="0.01">
+            </div>
+            <div>
+              <label>Prochain clic signal</label>
+              <div class="segmented-control">
+                <button type="button" id="annotationClickStartBtn" class="secondary">Début</button>
+                <button type="button" id="annotationClickEndBtn" class="secondary active">Fin</button>
+              </div>
+            </div>
+            <div>
+              <label for="annotationLabelInput">Label</label>
+              <input id="annotationLabelInput" list="annotationLabelOptions" placeholder="ex: freinage, virage, instable">
+              <datalist id="annotationLabelOptions"></datalist>
+            </div>
+            <div>
+              <label for="annotationConfidenceInput">Confiance</label>
+              <input id="annotationConfidenceInput" type="number" min="0" max="1" step="0.05" value="1">
+            </div>
+            <div>
+              <label for="annotationCommentInput">Commentaire</label>
+              <textarea id="annotationCommentInput" rows="3"></textarea>
+            </div>
+            <div class="row">
+              <button type="button" id="saveAnnotationBtn">Sauvegarder segment</button>
+              <button type="button" id="resetAnnotationBtn" class="secondary">Nouveau segment</button>
+            </div>
+            <div id="annotationStatus" class="status-text">Sélectionne un fichier resamplé.</div>
+          </aside>
+          <div class="stack annotation-main">
+            <div class="panel">
+              <h2>Signal annotable</h2>
+              <div id="annotationSignalPlot" class="plot-panel"></div>
+            </div>
+            <div class="panel">
+              <h2>Trajectoire GPS</h2>
+              <div id="annotationTrajectoryPlot" class="plot-panel"></div>
+            </div>
+            <div class="panel">
+              <h2>Segments sauvegardés</h2>
+              <div id="annotationsTable"></div>
+            </div>
           </div>
-          <div class="muted">Chaque annotation sera rattachée à un fichier et versionnée.</div>
         </div>
       </section>
 

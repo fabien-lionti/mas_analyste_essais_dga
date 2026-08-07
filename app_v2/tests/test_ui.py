@@ -51,6 +51,13 @@ def test_root_serves_ui_html():
     assert 'id="parametricXChannelSelect"' not in html
     assert 'id="parametricYChannelSelect"' not in html
     assert 'id="parametricPlot"' in html
+    assert 'id="annotationFileSelect"' in html
+    assert 'id="annotationChannelSelect"' in html
+    assert 'id="annotationStartInput"' in html
+    assert 'id="saveAnnotationBtn"' in html
+    assert 'id="annotationSignalPlot"' in html
+    assert 'id="annotationsTable"' in html
+    assert "Annotateur actif de segments" not in html
     assert "GET /api/analyses/{analysis_id}/exploration/signals/boxplot" not in html
 
 
@@ -78,3 +85,8 @@ def test_registered_routes_include_ui_and_current_api():
     assert "/api/analyses/{analysis_id}/exploration/files/{file_id}/signals/options" in paths
     assert "/api/analyses/{analysis_id}/exploration/files/{file_id}/series" in paths
     assert "/api/analyses/{analysis_id}/exploration/files/{file_id}/trajectory" in paths
+    assert "/api/analyses/{analysis_id}/annotation-sets" in paths
+    assert "/api/analyses/{analysis_id}/annotations" in paths
+    assert "/api/analyses/{analysis_id}/annotations/labels" in paths
+    assert "/api/analyses/{analysis_id}/annotations/{annotation_id}" in paths
+    assert "/api/analyses/{analysis_id}/annotations/{annotation_id}/versions" in paths

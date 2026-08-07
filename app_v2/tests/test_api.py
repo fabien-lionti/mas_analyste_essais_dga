@@ -15,6 +15,17 @@ from app_v2.app.api.routes.analyses import (
     list_analyses_endpoint,
     update_analysis_config_endpoint,
 )
+from app_v2.app.api.routes.annotations import (
+    AnnotationUpdateRequest,
+    AnnotationWriteRequest,
+    create_annotation_endpoint,
+    delete_annotation_endpoint,
+    list_annotation_labels_endpoint,
+    list_annotation_sets_endpoint,
+    list_annotation_versions_endpoint,
+    list_annotations_endpoint,
+    update_annotation_endpoint,
+)
 from app_v2.app.api.routes.files import (
     DiscoverDxdRequest,
     discover_dxd_endpoint,
@@ -191,3 +202,62 @@ def test_parametric_exploration_returns_current_and_filtered_points(tmp_path: Pa
         )
         assert filtered["file_count"] == 1
         assert filtered["point_count"] == 3
+
+
+def test_annotation_api_creates_updates_and_deletes_segment(tmp_path: Path):
+    db_path = tmp_path / "api.sqlite"
+    dxd_dir = tmp_path / "campaign"
+    dxd_dir.mkdir()
+    (dxd_dir / "a.dxd").write_bytes(b"a")
+
+    with connect(db_path) as conn:
+        init_db(conn)
+        analysis = create_analysis_endpoint(
+            CreateAnalysisRequest(name="Annotations", source_dxd_dir=str(dxd_dir)),
+            conn,
+        )
+        analysis_id = analysis["analysis_id"]
+        discover_dxd_endpoint(analysis_id, DiscoverDxdRequest(dxd_dir=str(dxd_dir)), conn)
+        file_row = list_files_endpoint(analysis_id, limit=1000, conn=conn)["items"][0]
+
+        sets = list_annotation_sets_endpoint(analysis_id, conn=conn)["items"]
+        assert sets[0]["name"] == "Annotations manuelles"
+
+        created = create_annotation_endpoint(
+            analysis_id,
+            AnnotationWriteRequest(
+                file_id=file_row["file_id"],
+                start_time_sec=1.0,
+                end_time_sec=2.5,
+                label="freinage",
+                confidence=0.9,
+                comment="segment net",
+            ),
+            conn,
+        )
+        assert created["label"] == "freinage"
+        assert created["version_number"] == 1
+
+        items = list_annotations_endpoint(analysis_id, file_id=file_row["file_id"], conn=conn)["items"]
+        assert [item["annotation_id"] for item in items] == [created["annotation_id"]]
+        assert list_annotation_labels_endpoint(analysis_id, conn=conn)["items"] == ["freinage"]
+
+        updated = update_annotation_endpoint(
+            analysis_id,
+            created["annotation_id"],
+            AnnotationUpdateRequest(
+                start_time_sec=1.2,
+                end_time_sec=3.0,
+                label="virage",
+                confidence=1.0,
+                comment="corrige",
+            ),
+            conn,
+        )
+        assert updated["label"] == "virage"
+        assert updated["version_number"] == 2
+        versions = list_annotation_versions_endpoint(analysis_id, created["annotation_id"], conn=conn)["items"]
+        assert [item["label"] for item in versions] == ["freinage", "virage"]
+
+        assert delete_annotation_endpoint(analysis_id, created["annotation_id"], conn=conn)["status"] == "ok"
+        assert list_annotations_endpoint(analysis_id, file_id=file_row["file_id"], conn=conn)["items"] == []
