@@ -20,6 +20,11 @@ def test_root_serves_ui_html():
     assert "Canaux DXD" in html
     assert "Sampling JSON" in html
     assert "Choix analyse" in html
+    assert "Analyse dynamique" in html
+    assert "Retournement" not in html
+    assert 'data-view="models"' not in html
+    assert 'id="view-models"' not in html
+    assert "Modèles, poids et prédictions" not in html
     assert "Export JSON en cours" in html
     assert 'id="finalizeAnalysisBtn"' in html
     assert 'data-view="channels"' not in html
@@ -52,11 +57,25 @@ def test_root_serves_ui_html():
     assert 'id="parametricYChannelSelect"' not in html
     assert 'id="parametricPlot"' in html
     assert 'id="annotationFileSelect"' in html
+    assert 'id="annotationTabs"' in html
+    assert 'data-annotation-step="annotate"' in html
+    assert 'data-annotation-step="catalog"' in html
     assert 'id="annotationChannelSelect"' in html
     assert 'id="annotationStartInput"' in html
+    assert 'id="annotationLabelSelect"' in html
+    assert 'id="annotationLabelInput"' not in html
     assert 'id="saveAnnotationBtn"' in html
     assert 'id="annotationSignalPlot"' in html
     assert 'id="annotationsTable"' in html
+    assert 'id="annotationLabelSummaryTable"' in html
+    assert 'id="annotationCatalogTable"' in html
+    assert 'id="createAnnotationLabelBtn"' in html
+    assert 'id="renameAnnotationLabelBtn"' in html
+    assert 'id="dynamicAnalysisUserPromptInput"' in html
+    assert 'id="dynamicAnalysisChannelSelect"' in html
+    assert 'id="buildDynamicContextBtn"' in html
+    assert 'id="runDynamicAnalysisBtn"' in html
+    assert 'id="dynamicAnalysisRunsTable"' in html
     assert "Annotateur actif de segments" not in html
     assert "GET /api/analyses/{analysis_id}/exploration/signals/boxplot" not in html
 
@@ -88,5 +107,15 @@ def test_registered_routes_include_ui_and_current_api():
     assert "/api/analyses/{analysis_id}/annotation-sets" in paths
     assert "/api/analyses/{analysis_id}/annotations" in paths
     assert "/api/analyses/{analysis_id}/annotations/labels" in paths
+    assert "/api/analyses/{analysis_id}/annotations/summary" in paths
+    assert "/api/analyses/{analysis_id}/annotations/labels/{label}" in paths
+    assert "/api/analyses/{analysis_id}/annotation-labels" in paths
+    assert "/api/analyses/{analysis_id}/annotation-labels/{label_id}" in paths
     assert "/api/analyses/{analysis_id}/annotations/{annotation_id}" in paths
     assert "/api/analyses/{analysis_id}/annotations/{annotation_id}/versions" in paths
+    assert "/api/analyses/{analysis_id}/dynamic-analysis/prompts" in paths
+    assert "/api/analyses/{analysis_id}/dynamic-analysis/context" in paths
+    assert "/api/analyses/{analysis_id}/dynamic-analysis/run" in paths
+    assert "/api/analyses/{analysis_id}/dynamic-analysis/runs" in paths
+    assert "/api/analyses/{analysis_id}/dynamic-analysis/runs/{run_id}" in paths
+    assert "/api/analyses/{analysis_id}/dynamic-analysis/runs/{run_id}/versions" in paths

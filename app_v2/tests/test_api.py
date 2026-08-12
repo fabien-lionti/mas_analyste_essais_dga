@@ -18,13 +18,40 @@ from app_v2.app.api.routes.analyses import (
 from app_v2.app.api.routes.annotations import (
     AnnotationUpdateRequest,
     AnnotationWriteRequest,
+    ManagedAnnotationLabelRequest,
+    RenameAnnotationLabelRequest,
     create_annotation_endpoint,
+    create_managed_annotation_label_endpoint,
     delete_annotation_endpoint,
+    delete_annotation_label_endpoint,
+    delete_managed_annotation_label_endpoint,
     list_annotation_labels_endpoint,
     list_annotation_sets_endpoint,
+    list_managed_annotation_labels_endpoint,
     list_annotation_versions_endpoint,
     list_annotations_endpoint,
+    rename_annotation_label_endpoint,
+    summarize_annotation_labels_endpoint,
+    update_managed_annotation_label_endpoint,
     update_annotation_endpoint,
+)
+from app_v2.app.api.routes.dynamic_analysis import (
+    DynamicAnalysisDefinitionRequest,
+    DynamicContextRequest,
+    DynamicPredictionCorrectionRequest,
+    DynamicPredictionRequest,
+    DynamicPromptRequest,
+    DynamicRunVersionRequest,
+    build_context_endpoint,
+    create_dynamic_analysis_endpoint,
+    create_dynamic_prediction_correction_endpoint,
+    create_dynamic_predictions_endpoint,
+    create_prompt_endpoint,
+    create_run_endpoint,
+    create_run_version_endpoint,
+    list_dynamic_predictions_endpoint,
+    list_dynamic_analyses_endpoint,
+    list_runs_endpoint,
 )
 from app_v2.app.api.routes.files import (
     DiscoverDxdRequest,
@@ -222,6 +249,13 @@ def test_annotation_api_creates_updates_and_deletes_segment(tmp_path: Path):
 
         sets = list_annotation_sets_endpoint(analysis_id, conn=conn)["items"]
         assert sets[0]["name"] == "Annotations manuelles"
+        label = create_managed_annotation_label_endpoint(
+            analysis_id,
+            ManagedAnnotationLabelRequest(name="freinage", color="#1368ce"),
+            conn=conn,
+        )
+        assert label["name"] == "freinage"
+        assert list_managed_annotation_labels_endpoint(analysis_id, conn=conn)["items"][0]["name"] == "freinage"
 
         created = create_annotation_endpoint(
             analysis_id,
@@ -241,7 +275,15 @@ def test_annotation_api_creates_updates_and_deletes_segment(tmp_path: Path):
         items = list_annotations_endpoint(analysis_id, file_id=file_row["file_id"], conn=conn)["items"]
         assert [item["annotation_id"] for item in items] == [created["annotation_id"]]
         assert list_annotation_labels_endpoint(analysis_id, conn=conn)["items"] == ["freinage"]
+        summary = summarize_annotation_labels_endpoint(analysis_id, conn=conn)["items"]
+        assert summary[0]["label"] == "freinage"
+        assert summary[0]["annotation_count"] == 1
 
+        create_managed_annotation_label_endpoint(
+            analysis_id,
+            ManagedAnnotationLabelRequest(name="virage", color="#15803d"),
+            conn=conn,
+        )
         updated = update_annotation_endpoint(
             analysis_id,
             created["annotation_id"],
@@ -259,5 +301,209 @@ def test_annotation_api_creates_updates_and_deletes_segment(tmp_path: Path):
         versions = list_annotation_versions_endpoint(analysis_id, created["annotation_id"], conn=conn)["items"]
         assert [item["label"] for item in versions] == ["freinage", "virage"]
 
-        assert delete_annotation_endpoint(analysis_id, created["annotation_id"], conn=conn)["status"] == "ok"
+        managed_virage = [
+            item for item in list_managed_annotation_labels_endpoint(analysis_id, conn=conn)["items"]
+            if item["name"] == "virage"
+        ][0]
+        renamed_managed = update_managed_annotation_label_endpoint(
+            analysis_id,
+            managed_virage["label_id"],
+            ManagedAnnotationLabelRequest(name="courbe", color="#15803d"),
+            conn=conn,
+        )
+        assert renamed_managed["name"] == "courbe"
+        assert list_annotation_labels_endpoint(analysis_id, conn=conn)["items"] == ["courbe", "freinage"]
+
+        with pytest.raises(HTTPException) as exc:
+            delete_managed_annotation_label_endpoint(
+                analysis_id,
+                renamed_managed["label_id"],
+                delete_annotations=False,
+                conn=conn,
+            )
+        assert exc.value.status_code == 409
+        deleted_label = delete_managed_annotation_label_endpoint(
+            analysis_id,
+            renamed_managed["label_id"],
+            delete_annotations=True,
+            conn=conn,
+        )
+        assert deleted_label["deleted_annotations"] == 1
         assert list_annotations_endpoint(analysis_id, file_id=file_row["file_id"], conn=conn)["items"] == []
+
+
+def test_dynamic_analysis_context_run_and_version(tmp_path: Path):
+    db_path = tmp_path / "api.sqlite"
+    dxd_dir = tmp_path / "campaign"
+    json_dir = tmp_path / "json"
+    dxd_dir.mkdir()
+    json_dir.mkdir()
+    (dxd_dir / "a.dxd").write_bytes(b"a")
+    json_path = json_dir / "a.json"
+    json_path.write_text(
+        """
+        {
+          "timebase": {"time": [0, 1, 2, 3]},
+          "channels": {
+            "resampled": {
+              "vehicle.ax": {"values": [1, 2, 3, 4], "unit": "m/s^2"},
+              "vehicle.ay": {"values": [4, 3, 2, 1], "unit": "m/s^2"}
+            }
+          }
+        }
+        """,
+        encoding="utf-8",
+    )
+
+    with connect(db_path) as conn:
+        init_db(conn)
+        analysis = create_analysis_endpoint(
+            CreateAnalysisRequest(name="Dynamique", source_dxd_dir=str(dxd_dir)),
+            conn,
+        )
+        analysis_id = analysis["analysis_id"]
+        discover_dxd_endpoint(analysis_id, DiscoverDxdRequest(dxd_dir=str(dxd_dir)), conn)
+        file_row = list_files_endpoint(analysis_id, limit=1000, conn=conn)["items"][0]
+        update_file_resampled_json(conn, analysis_id=analysis_id, file_id=file_row["file_id"], json_path=json_path)
+        create_managed_annotation_label_endpoint(
+            analysis_id,
+            ManagedAnnotationLabelRequest(name="freinage"),
+            conn=conn,
+        )
+        create_annotation_endpoint(
+            analysis_id,
+            AnnotationWriteRequest(
+                file_id=file_row["file_id"],
+                start_time_sec=1,
+                end_time_sec=2,
+                label="freinage",
+            ),
+            conn,
+        )
+        prompt = create_prompt_endpoint(
+            analysis_id,
+            DynamicPromptRequest(
+                name="Protocole",
+                system_prompt="Expert dynamique.",
+                user_prompt="Analyse les segments.",
+            ),
+            conn,
+        )
+        request = DynamicContextRequest(
+            name="Run test",
+            prompt_id=prompt["prompt_id"],
+            user_prompt="Analyse les segments.",
+            channels=["vehicle.ax", "vehicle.ay"],
+            labels=["freinage"],
+            max_segments=10,
+            max_points_per_segment=20,
+        )
+        context = build_context_endpoint(analysis_id, request, conn)
+        assert context["summary"]["segment_count"] == 1
+        assert context["segments"][0]["signal_context"]["channels"]["vehicle.ax"]["stats"]["count"] == 4
+
+        run = create_run_endpoint(analysis_id, request, conn)
+        assert run["status"] == "dry_run"
+        assert list_runs_endpoint(analysis_id, conn)["items"][0]["run_id"] == run["run_id"]
+        version = create_run_version_endpoint(
+            analysis_id,
+            run["run_id"],
+            DynamicRunVersionRequest(
+                response_markdown="Correction validée",
+                confidence="haute",
+                validated_for_dataset=True,
+            ),
+            conn,
+        )
+        assert version["version_number"] == 2
+        assert version["validated_for_dataset"] is True
+
+
+def test_dynamic_analysis_definition_prediction_and_correction(tmp_path: Path):
+    db_path = tmp_path / "api.sqlite"
+    dxd_dir = tmp_path / "campaign"
+    json_dir = tmp_path / "json"
+    dxd_dir.mkdir()
+    json_dir.mkdir()
+    (dxd_dir / "a.dxd").write_bytes(b"a")
+    json_path = json_dir / "a.json"
+    json_path.write_text(
+        """
+        {
+          "timebase": {"time": [0, 1, 2, 3]},
+          "channels": {
+            "resampled": {
+              "vehicle.ax": {"values": [1, 2, 5, 4], "unit": "m/s^2"},
+              "vehicle.ay": {"values": [0, 1, 0, -1], "unit": "m/s^2"}
+            }
+          }
+        }
+        """,
+        encoding="utf-8",
+    )
+
+    with connect(db_path) as conn:
+        init_db(conn)
+        analysis = create_analysis_endpoint(
+            CreateAnalysisRequest(name="Dynamique", source_dxd_dir=str(dxd_dir)),
+            conn,
+        )
+        analysis_id = analysis["analysis_id"]
+        discover_dxd_endpoint(analysis_id, DiscoverDxdRequest(dxd_dir=str(dxd_dir)), conn)
+        file_row = list_files_endpoint(analysis_id, limit=1000, conn=conn)["items"][0]
+        update_file_resampled_json(conn, analysis_id=analysis_id, file_id=file_row["file_id"], json_path=json_path)
+        create_managed_annotation_label_endpoint(
+            analysis_id,
+            ManagedAnnotationLabelRequest(name="freinage"),
+            conn=conn,
+        )
+        annotation = create_annotation_endpoint(
+            analysis_id,
+            AnnotationWriteRequest(
+                file_id=file_row["file_id"],
+                start_time_sec=1,
+                end_time_sec=2,
+                label="freinage",
+            ),
+            conn,
+        )
+        dynamic_analysis = create_dynamic_analysis_endpoint(
+            analysis_id,
+            DynamicAnalysisDefinitionRequest(
+                name="Analyse freinage",
+                system_prompt="Expert dynamique.",
+                selected_channels=["vehicle.ax", "vehicle.ay"],
+                indicators=[{"name": "peak_abs"}],
+                label_category="freinage",
+                output_schema={"synthese": "string"},
+            ),
+            conn,
+        )
+        assert dynamic_analysis["analysis_id"] == analysis_id
+        assert dynamic_analysis["label_category"] == "freinage"
+        assert list_dynamic_analyses_endpoint(analysis_id, conn)["items"][0]["dynamic_analysis_id"] == dynamic_analysis["dynamic_analysis_id"]
+
+        predictions = create_dynamic_predictions_endpoint(
+            analysis_id,
+            dynamic_analysis["dynamic_analysis_id"],
+            DynamicPredictionRequest(user_prompt="Interprète le freinage."),
+            conn,
+        )
+        assert predictions["context_summary"]["segment_count"] == 1
+        prediction = predictions["items"][0]
+        assert prediction["annotation_id"] == annotation["annotation_id"]
+        assert prediction["response_json"]["label_category"] == "freinage"
+        assert list_dynamic_predictions_endpoint(analysis_id, dynamic_analysis["dynamic_analysis_id"], conn)["items"][0]["prediction_id"] == prediction["prediction_id"]
+
+        correction = create_dynamic_prediction_correction_endpoint(
+            analysis_id,
+            prediction["prediction_id"],
+            DynamicPredictionCorrectionRequest(
+                corrected_response_markdown="Correction analyste",
+                corrected_response_json={"synthese": "Correction analyste"},
+                corrected_confidence="haute",
+                validated_for_dataset=True,
+            ),
+            conn,
+        )
+        assert correction["validated_for_dataset"] is True

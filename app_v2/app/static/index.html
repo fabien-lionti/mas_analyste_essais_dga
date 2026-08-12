@@ -5,21 +5,19 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Analyse Essais DGA</title>
   <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
-  <link rel="stylesheet" href="/static/styles.css?v=20260724-12">
+  <link rel="stylesheet" href="/static/styles.css?v=20260724-17">
 </head>
 <body>
   <header>
     <div>
-      <div class="brand">Analyse Essais DGA</div>
-      <div class="subtitle">Architecture analyse-centrique</div>
+      <div class="brand">a trouver</div>
     </div>
     <nav class="nav" id="mainNav">
       <button type="button" class="active" data-view="overview">Créer une analyse</button>
       <button type="button" data-view="choice">Choix analyse</button>
       <button type="button" data-view="exploration">Exploration</button>
       <button type="button" data-view="annotations">Annotations</button>
-      <button type="button" data-view="rollover">Retournement</button>
-      <button type="button" data-view="models">Modèles</button>
+      <button type="button" data-view="dynamic-analysis">Analyse dynamique</button>
     </nav>
     <div class="status-bar" id="statusBar">Initialisation</div>
   </header>
@@ -322,9 +320,17 @@
       </section>
 
       <section class="view" id="view-annotations">
-        <div class="annotation-layout">
+        <div class="panel stack">
+          <h2>Annotations</h2>
+          <div class="subtabs" id="annotationTabs">
+            <button type="button" class="active" data-annotation-step="annotate">1. Annoter</button>
+            <button type="button" data-annotation-step="catalog">2. Catalogue des annotations</button>
+          </div>
+        </div>
+        <div class="annotation-step active" id="annotation-annotate">
+          <div class="annotation-layout">
           <aside class="panel stack annotation-sidebar">
-            <h2>Annotations</h2>
+            <h2>Annoter</h2>
             <div class="grid-2">
               <div>
                 <label for="annotationDateFromInput">Date début</label>
@@ -379,9 +385,10 @@
               </div>
             </div>
             <div>
-              <label for="annotationLabelInput">Label</label>
-              <input id="annotationLabelInput" list="annotationLabelOptions" placeholder="ex: freinage, virage, instable">
-              <datalist id="annotationLabelOptions"></datalist>
+              <label for="annotationLabelSelect">Label</label>
+              <select id="annotationLabelSelect">
+                <option value="">Aucun label disponible</option>
+              </select>
             </div>
             <div>
               <label for="annotationConfidenceInput">Confiance</label>
@@ -412,36 +419,233 @@
             </div>
           </div>
         </div>
-      </section>
-
-      <section class="view" id="view-rollover">
-        <div class="panel roadmap">
-          <h2>Retournement</h2>
-          <div class="roadmap-item">
-            <strong>API prévue</strong>
-            <div class="code">POST /api/analyses/{analysis_id}/rollover/analyze</div>
-            <div class="code">GET /api/analyses/{analysis_id}/rollover</div>
-            <div class="code">POST /api/analyses/{analysis_id}/rollover/{result_id}/versions</div>
+        </div>
+        <div class="annotation-step" id="annotation-catalog">
+          <div class="grid-2 annotation-catalog-layout">
+            <div class="panel stack">
+              <h2>Filtres catalogue</h2>
+              <div class="grid-2">
+                <div>
+                  <label for="annotationCatalogDateFromInput">Date début</label>
+                  <select id="annotationCatalogDateFromInput">
+                    <option value="">Toutes les dates</option>
+                  </select>
+                </div>
+                <div>
+                  <label for="annotationCatalogDateToInput">Date fin</label>
+                  <select id="annotationCatalogDateToInput">
+                    <option value="">Toutes les dates</option>
+                  </select>
+                </div>
+              </div>
+              <div>
+                <label for="annotationCatalogLabelSelect">Label</label>
+                <select id="annotationCatalogLabelSelect">
+                  <option value="">Tous les labels</option>
+                </select>
+              </div>
+              <div>
+                <label for="annotationCatalogFileInput">Filtrer fichier</label>
+                <input id="annotationCatalogFileInput" type="search" placeholder="Nom DXD ou JSON">
+              </div>
+              <div class="grid-2">
+                <div>
+                  <label for="annotationCatalogMinDurationInput">Durée min (s)</label>
+                  <input id="annotationCatalogMinDurationInput" type="number" min="0" step="0.1">
+                </div>
+                <div>
+                  <label for="annotationCatalogMaxDurationInput">Durée max (s)</label>
+                  <input id="annotationCatalogMaxDurationInput" type="number" min="0" step="0.1">
+                </div>
+              </div>
+              <div id="annotationCatalogStatus" class="status-text">Catalogue non chargé.</div>
+            </div>
+            <div class="panel stack">
+              <h2>Gestion labels</h2>
+              <div class="grid-2">
+                <div>
+                  <label for="annotationNewLabelInput">Nouveau label</label>
+                  <input id="annotationNewLabelInput" placeholder="ex: freinage">
+                </div>
+                <div>
+                  <label for="annotationNewLabelColorInput">Couleur</label>
+                  <input id="annotationNewLabelColorInput" type="color" value="#1368ce">
+                </div>
+              </div>
+              <div>
+                <label for="annotationNewLabelDescriptionInput">Description</label>
+                <input id="annotationNewLabelDescriptionInput">
+              </div>
+              <div class="row">
+                <button type="button" id="createAnnotationLabelBtn">Créer label</button>
+              </div>
+              <div class="grid-2">
+                <div>
+                  <label for="annotationRenameOldLabelSelect">Label à renommer</label>
+                  <select id="annotationRenameOldLabelSelect"></select>
+                </div>
+                <div>
+                  <label for="annotationRenameNewLabelInput">Nouveau label</label>
+                  <input id="annotationRenameNewLabelInput">
+                </div>
+              </div>
+              <div class="row">
+                <button type="button" id="renameAnnotationLabelBtn">Renommer label</button>
+                <button type="button" id="deleteAnnotationLabelBtn" class="danger">Supprimer label</button>
+              </div>
+            </div>
           </div>
-          <div class="muted">Tâche métier rattachée à l'analyse, un fichier et éventuellement une version d'annotation.</div>
+          <div class="panel">
+            <h2>Synthèse par label</h2>
+            <div id="annotationLabelSummaryTable"></div>
+          </div>
+          <div class="panel">
+            <h2>Catalogue des annotations</h2>
+            <div id="annotationCatalogTable"></div>
+          </div>
         </div>
       </section>
 
-      <section class="view" id="view-models">
-        <div class="panel roadmap">
-          <h2>Modèles, poids et prédictions</h2>
-          <div class="roadmap-item">
-            <strong>API prévue</strong>
-            <div class="code">GET /api/analyses/{analysis_id}/models</div>
-            <div class="code">POST /api/analyses/{analysis_id}/models/{model_id}/train</div>
-            <div class="code">GET /api/analyses/{analysis_id}/model-versions/{model_version_id}/predictions</div>
+      <section class="view" id="view-dynamic-analysis">
+        <div class="panel stack">
+          <h2>Analyse dynamique</h2>
+          <div class="subtabs" id="dynamicAnalysisTabs">
+            <button type="button" class="active" data-dynamic-step="analysis">1. Analyse</button>
+            <button type="button" data-dynamic-step="prepare">2. Préparer</button>
+            <button type="button" data-dynamic-step="results">3. Résultats</button>
           </div>
-          <div class="muted">Les poids resteront sur disque local, mais toujours indexés dans SQLite via une version de modèle.</div>
+
+          <div class="dynamic-analysis-step active" id="dynamic-analysis-analysis">
+            <div class="grid-2">
+              <div>
+                <label for="dynamicAnalysisNameInput">Nom de l'analyse dynamique</label>
+                <input id="dynamicAnalysisNameInput" value="Analyse dynamique">
+              </div>
+              <div>
+                <label for="dynamicAnalysisPromptSelect">Analyse dynamique existante</label>
+                <select id="dynamicAnalysisPromptSelect">
+                  <option value="">Nouvelle analyse dynamique</option>
+                </select>
+              </div>
+            </div>
+            <div class="grid-2">
+              <div>
+                <label for="dynamicAnalysisPromptNameInput">Nom du protocole</label>
+                <input id="dynamicAnalysisPromptNameInput" value="Analyse de segments annotés">
+              </div>
+              <div>
+                <label for="dynamicAnalysisLabelCategorySelect">Catégorie de label</label>
+                <select id="dynamicAnalysisLabelCategorySelect"></select>
+              </div>
+            </div>
+            <div>
+              <label for="dynamicAnalysisProtocolDescriptionInput">Description courte</label>
+              <textarea id="dynamicAnalysisProtocolDescriptionInput" rows="3">Analyse guidée de segments annotés à partir des canaux resamplés sélectionnés.</textarea>
+            </div>
+            <div>
+              <label for="dynamicAnalysisSystemPromptInput">Prompt système</label>
+              <textarea id="dynamicAnalysisSystemPromptInput" rows="4">Tu es un expert en dynamique véhicule. Analyse uniquement les signaux, annotations et métadonnées fournis. Cite les segments et canaux utilisés.</textarea>
+            </div>
+            <div>
+              <label for="dynamicAnalysisOutputSchemaInput">Schéma de sortie attendu</label>
+              <textarea id="dynamicAnalysisOutputSchemaInput" class="code-textarea" rows="7">{
+  "synthese": "string",
+  "segments_remarquables": [],
+  "incoherences": [],
+  "niveau_confiance": "faible|moyen|haut",
+  "points_a_verifier": []
+}</textarea>
+            </div>
+            <div class="row">
+              <button type="button" id="saveDynamicPromptBtn">Sauvegarder analyse dynamique</button>
+            </div>
+          </div>
+
+          <div class="dynamic-analysis-step" id="dynamic-analysis-prepare">
+            <div>
+              <label for="dynamicAnalysisChannelSelect">Canaux resamplés</label>
+              <select id="dynamicAnalysisChannelSelect" multiple size="8"></select>
+            </div>
+            <div>
+              <label for="dynamicAnalysisLabelSelect">Segments inclus</label>
+              <select id="dynamicAnalysisLabelSelect" multiple size="6"></select>
+            </div>
+            <div>
+              <label for="dynamicAnalysisUserPromptInput">Prompt opératoire</label>
+              <textarea id="dynamicAnalysisUserPromptInput" rows="7">Décris les comportements dynamiques observés sur les segments annotés. Compare les canaux sélectionnés, identifie les transitions, les pics, les incohérences éventuelles et formule une synthèse exploitable.</textarea>
+            </div>
+            <div class="grid-2">
+              <div>
+                <label for="dynamicContextBeforeInput">Contexte avant (s)</label>
+                <input id="dynamicContextBeforeInput" type="number" min="0" max="120" step="1" value="5">
+              </div>
+              <div>
+                <label for="dynamicContextAfterInput">Contexte après (s)</label>
+                <input id="dynamicContextAfterInput" type="number" min="0" max="120" step="1" value="10">
+              </div>
+            </div>
+            <div class="grid-2">
+              <div>
+                <label for="dynamicMaxSegmentsInput">Segments max</label>
+                <input id="dynamicMaxSegmentsInput" type="number" min="1" max="200" step="1" value="25">
+              </div>
+              <div>
+                <label for="dynamicMaxPointsInput">Points / segment</label>
+                <input id="dynamicMaxPointsInput" type="number" min="20" max="2000" step="10" value="250">
+              </div>
+            </div>
+            <div class="row">
+              <button type="button" id="buildDynamicContextBtn" class="secondary">Construire contexte</button>
+              <button type="button" id="runDynamicAnalysisBtn">Lancer analyse</button>
+            </div>
+            <div id="dynamicAnalysisStatus" class="status-text">Sélectionne les canaux, labels et protocole opératoire.</div>
+            <div class="section-block">
+              <h2>Aperçu contexte</h2>
+              <div id="dynamicContextSummary"></div>
+              <pre id="dynamicContextPreview" class="json-preview"></pre>
+            </div>
+          </div>
+
+          <div class="dynamic-analysis-step" id="dynamic-analysis-results">
+            <div class="section-block">
+              <h2>Résultat</h2>
+              <div id="dynamicAnalysisResult" class="analysis-markdown"></div>
+            </div>
+            <div class="section-block">
+              <h2>Prédictions par annotation</h2>
+              <div id="dynamicAnalysisRunsTable"></div>
+            </div>
+            <div class="section-block stack">
+              <h2>Correction humaine</h2>
+              <textarea id="dynamicAnalysisCorrectionInput" rows="7" placeholder="Sélectionne une prédiction puis corrige la réponse ici."></textarea>
+              <div class="grid-3">
+                <div>
+                  <label for="dynamicAnalysisConfidenceSelect">Confiance</label>
+                  <select id="dynamicAnalysisConfidenceSelect">
+                    <option value="faible">Faible</option>
+                    <option value="moyenne" selected>Moyenne</option>
+                    <option value="haute">Haute</option>
+                  </select>
+                </div>
+                <div>
+                  <label for="dynamicAnalysisCorrectionNoteInput">Note</label>
+                  <input id="dynamicAnalysisCorrectionNoteInput" value="Correction humaine">
+                </div>
+                <label class="row">
+                  <input id="dynamicAnalysisValidatedInput" type="checkbox" style="width:auto">
+                  <span>Valider dataset</span>
+                </label>
+              </div>
+              <div class="row">
+                <button type="button" id="saveDynamicAnalysisVersionBtn" class="secondary" disabled>Sauvegarder correction</button>
+              </div>
+            </div>
+          </div>
         </div>
       </section>
     </main>
   </div>
 
-  <script src="/static/app.js?v=20260724-12"></script>
+  <script src="/static/app.js?v=20260724-14"></script>
 </body>
 </html>

@@ -6,7 +6,7 @@ from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
-from app_v2.app.api.routes import analyses, annotations, channels, exploration, files, resampling
+from app_v2.app.api.routes import analyses, annotations, channels, dynamic_analysis, exploration, files, resampling
 
 
 app = FastAPI(title="Analyse Essais DGA")
@@ -20,6 +20,7 @@ app.include_router(channels.router)
 app.include_router(resampling.router)
 app.include_router(exploration.router)
 app.include_router(annotations.router)
+app.include_router(dynamic_analysis.router)
 
 
 @app.get("/")

@@ -36,6 +36,19 @@ def _add_column_if_missing(conn: sqlite3.Connection, table_name: str, column_nam
 def migrate_db(conn: sqlite3.Connection) -> None:
     _add_column_if_missing(conn, "analysis_files", "recorded_at", "recorded_at TEXT")
     _add_column_if_missing(conn, "analysis_files", "duration_sec", "duration_sec REAL")
+    _add_column_if_missing(conn, "dynamic_analysis_prompts", "description", "description TEXT")
+    _add_column_if_missing(
+        conn,
+        "dynamic_analysis_prompts",
+        "required_channels_json",
+        "required_channels_json TEXT NOT NULL DEFAULT '[]'",
+    )
+    _add_column_if_missing(
+        conn,
+        "dynamic_analysis_prompts",
+        "output_schema_json",
+        "output_schema_json TEXT NOT NULL DEFAULT '{}'",
+    )
 
 
 def init_db(conn: sqlite3.Connection) -> None:

@@ -175,3 +175,127 @@ CREATE TABLE IF NOT EXISTS annotation_versions (
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_annotation_versions_annotation_number
 ON annotation_versions(annotation_id, version_number);
+
+CREATE TABLE IF NOT EXISTS annotation_labels (
+  label_id TEXT PRIMARY KEY,
+  analysis_id TEXT NOT NULL,
+  name TEXT NOT NULL,
+  description TEXT,
+  color TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  FOREIGN KEY (analysis_id) REFERENCES analyses(analysis_id) ON DELETE CASCADE
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_annotation_labels_analysis_name
+ON annotation_labels(analysis_id, name);
+
+CREATE TABLE IF NOT EXISTS dynamic_analysis_prompts (
+  prompt_id TEXT PRIMARY KEY,
+  analysis_id TEXT NOT NULL,
+  name TEXT NOT NULL,
+  description TEXT,
+  system_prompt TEXT NOT NULL,
+  user_prompt TEXT NOT NULL,
+  required_channels_json TEXT NOT NULL DEFAULT '[]',
+  output_schema_json TEXT NOT NULL DEFAULT '{}',
+  version_number INTEGER NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  FOREIGN KEY (analysis_id) REFERENCES analyses(analysis_id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_dynamic_analysis_prompts_analysis
+ON dynamic_analysis_prompts(analysis_id, updated_at);
+
+CREATE TABLE IF NOT EXISTS dynamic_analysis_runs (
+  run_id TEXT PRIMARY KEY,
+  analysis_id TEXT NOT NULL,
+  prompt_id TEXT,
+  name TEXT NOT NULL,
+  provider TEXT NOT NULL,
+  model TEXT,
+  status TEXT NOT NULL,
+  request_json TEXT NOT NULL,
+  context_json TEXT NOT NULL,
+  response_markdown TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  FOREIGN KEY (analysis_id) REFERENCES analyses(analysis_id) ON DELETE CASCADE,
+  FOREIGN KEY (prompt_id) REFERENCES dynamic_analysis_prompts(prompt_id) ON DELETE SET NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_dynamic_analysis_runs_analysis
+ON dynamic_analysis_runs(analysis_id, created_at);
+
+CREATE TABLE IF NOT EXISTS dynamic_analysis_versions (
+  version_id TEXT PRIMARY KEY,
+  run_id TEXT NOT NULL,
+  version_number INTEGER NOT NULL,
+  response_markdown TEXT NOT NULL,
+  confidence TEXT,
+  note TEXT,
+  validated_for_dataset INTEGER NOT NULL,
+  created_at TEXT NOT NULL,
+  FOREIGN KEY (run_id) REFERENCES dynamic_analysis_runs(run_id) ON DELETE CASCADE
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_dynamic_analysis_versions_run_number
+ON dynamic_analysis_versions(run_id, version_number);
+
+CREATE TABLE IF NOT EXISTS dynamic_analyses (
+  dynamic_analysis_id TEXT PRIMARY KEY,
+  analysis_id TEXT NOT NULL,
+  name TEXT NOT NULL,
+  system_prompt TEXT NOT NULL,
+  selected_channels_json TEXT NOT NULL,
+  indicators_json TEXT NOT NULL,
+  label_category TEXT NOT NULL,
+  output_schema_json TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  FOREIGN KEY (analysis_id) REFERENCES analyses(analysis_id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_dynamic_analyses_analysis
+ON dynamic_analyses(analysis_id, updated_at);
+
+CREATE TABLE IF NOT EXISTS dynamic_annotation_predictions (
+  prediction_id TEXT PRIMARY KEY,
+  dynamic_analysis_id TEXT NOT NULL,
+  annotation_id TEXT NOT NULL,
+  provider TEXT NOT NULL,
+  model TEXT,
+  status TEXT NOT NULL,
+  input_context_json TEXT NOT NULL,
+  input_artifact_path TEXT,
+  response_json TEXT NOT NULL,
+  response_markdown TEXT NOT NULL,
+  confidence TEXT,
+  error_message TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  FOREIGN KEY (dynamic_analysis_id) REFERENCES dynamic_analyses(dynamic_analysis_id) ON DELETE CASCADE,
+  FOREIGN KEY (annotation_id) REFERENCES annotations(annotation_id) ON DELETE CASCADE
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_dynamic_predictions_unique_annotation
+ON dynamic_annotation_predictions(dynamic_analysis_id, annotation_id);
+
+CREATE INDEX IF NOT EXISTS idx_dynamic_predictions_dynamic_analysis
+ON dynamic_annotation_predictions(dynamic_analysis_id, created_at);
+
+CREATE TABLE IF NOT EXISTS dynamic_prediction_corrections (
+  correction_id TEXT PRIMARY KEY,
+  prediction_id TEXT NOT NULL,
+  corrected_response_json TEXT NOT NULL,
+  corrected_response_markdown TEXT NOT NULL,
+  corrected_confidence TEXT,
+  note TEXT,
+  validated_for_dataset INTEGER NOT NULL,
+  created_at TEXT NOT NULL,
+  FOREIGN KEY (prediction_id) REFERENCES dynamic_annotation_predictions(prediction_id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_dynamic_corrections_prediction
+ON dynamic_prediction_corrections(prediction_id, created_at);

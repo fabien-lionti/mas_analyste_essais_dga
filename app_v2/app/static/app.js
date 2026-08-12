@@ -29,9 +29,21 @@ const state = {
   annotationFileId: "",
   annotations: [],
   annotationLabels: [],
+  annotationManagedLabels: [],
   annotationEditingId: "",
   annotationSeries: null,
   annotationClickTarget: "end",
+  annotationCatalog: [],
+  annotationLabelSummary: [],
+  annotationStep: "annotate",
+  dynamicPrompts: [],
+  dynamicRuns: [],
+  dynamicAnalyses: [],
+  dynamicPredictions: [],
+  dynamicContext: null,
+  dynamicSelectedRunId: "",
+  dynamicSelectedAnalysisId: "",
+  dynamicSelectedPredictionId: "",
 };
 
 let explorationDateFilterTimer = null;
@@ -145,6 +157,28 @@ function showExplorationStep(step) {
   $(`exploration-${step}`)?.classList.add("active");
 }
 
+function showAnnotationStep(step) {
+  const target = step === "catalog" ? "catalog" : "annotate";
+  state.annotationStep = target;
+  document.querySelectorAll("[data-annotation-step]").forEach(button => {
+    button.classList.toggle("active", button.dataset.annotationStep === target);
+  });
+  document.querySelectorAll(".annotation-step").forEach(item => item.classList.remove("active"));
+  $(`annotation-${target}`)?.classList.add("active");
+  if (target === "annotate") {
+    resizeAnnotationPlotsSoon();
+  }
+}
+
+function showDynamicAnalysisStep(step) {
+  const target = ["analysis", "prepare", "results"].includes(step) ? step : "analysis";
+  document.querySelectorAll("[data-dynamic-step]").forEach(button => {
+    button.classList.toggle("active", button.dataset.dynamicStep === target);
+  });
+  document.querySelectorAll(".dynamic-analysis-step").forEach(item => item.classList.remove("active"));
+  $(`dynamic-analysis-${target}`)?.classList.add("active");
+}
+
 function renderWorkflowState() {
   const stateNode = $("workflowSourceState");
   if (stateNode) {
@@ -235,6 +269,22 @@ function setParametricStatus(message) {
 function setAnnotationStatus(message) {
   const node = $("annotationStatus");
   if (node) node.textContent = message;
+}
+
+function setDynamicAnalysisStatus(message) {
+  const node = $("dynamicAnalysisStatus");
+  if (node) node.textContent = message;
+}
+
+function renderMarkdownLite(text) {
+  const lines = String(text || "").split(/\r?\n/);
+  return lines.map(line => {
+    if (line.startsWith("### ")) return `<h3>${escapeHtml(line.slice(4))}</h3>`;
+    if (line.startsWith("## ")) return `<h2>${escapeHtml(line.slice(3))}</h2>`;
+    if (line.startsWith("- ")) return `<div>• ${escapeHtml(line.slice(2))}</div>`;
+    if (!line.trim()) return "<br>";
+    return `<p>${escapeHtml(line)}</p>`;
+  }).join("");
 }
 
 function resizePlots(ids) {
@@ -368,11 +418,36 @@ function renderAnnotationChannelOptions(previous = "") {
 }
 
 function renderAnnotationLabels() {
-  const datalist = $("annotationLabelOptions");
-  if (!datalist) return;
-  datalist.innerHTML = state.annotationLabels.map(label => `
-    <option value="${escapeHtml(label)}"></option>
-  `).join("");
+  const annotateSelect = $("annotationLabelSelect");
+  if (annotateSelect) {
+    const previous = annotateSelect.value;
+    annotateSelect.innerHTML = state.annotationLabels.length
+      ? [
+        '<option value="">Choisir un label</option>',
+        ...state.annotationLabels.map(label => `<option value="${escapeHtml(label)}">${escapeHtml(label)}</option>`),
+      ].join("")
+      : '<option value="">Aucun label disponible</option>';
+    annotateSelect.value = state.annotationLabels.includes(previous) ? previous : "";
+  }
+  const catalogSelect = $("annotationCatalogLabelSelect");
+  if (catalogSelect) {
+    const previous = catalogSelect.value;
+    catalogSelect.innerHTML = [
+      '<option value="">Tous les labels</option>',
+      ...state.annotationLabels.map(label => `<option value="${escapeHtml(label)}">${escapeHtml(label)}</option>`),
+    ].join("");
+    catalogSelect.value = state.annotationLabels.includes(previous) ? previous : "";
+  }
+  const renameSelect = $("annotationRenameOldLabelSelect");
+  if (renameSelect) {
+    const previous = renameSelect.value;
+    renameSelect.innerHTML = state.annotationManagedLabels.length
+      ? state.annotationManagedLabels.map(label => `<option value="${escapeHtml(label.label_id)}">${escapeHtml(label.name)}</option>`).join("")
+      : '<option value="">Aucun label</option>';
+    renameSelect.value = state.annotationManagedLabels.some(label => label.label_id === previous)
+      ? previous
+      : (state.annotationManagedLabels[0]?.label_id || "");
+  }
 }
 
 function selectedExplorationChannels() {
@@ -734,6 +809,11 @@ async function loadAnnotationDateRange() {
   if (!analysisId || !fromInput || !toInput) return;
   const payload = await api(`/api/analyses/${encodeURIComponent(analysisId)}/exploration/date-range`);
   renderDateRangeControls(payload, fromInput, toInput, status);
+  const catalogFrom = $("annotationCatalogDateFromInput");
+  const catalogTo = $("annotationCatalogDateToInput");
+  if (catalogFrom && catalogTo) {
+    renderDateRangeControls(payload, catalogFrom, catalogTo, null);
+  }
 }
 
 function renderDateRangeControls(payload, fromInput, toInput, status) {
@@ -845,8 +925,9 @@ async function loadAnnotationChannels() {
 async function loadAnnotationLabels() {
   const analysisId = currentAnalysisId();
   if (!analysisId) return;
-  const payload = await api(`/api/analyses/${encodeURIComponent(analysisId)}/annotations/labels`);
-  state.annotationLabels = payload.items || [];
+  const payload = await api(`/api/analyses/${encodeURIComponent(analysisId)}/annotation-labels`);
+  state.annotationManagedLabels = payload.items || [];
+  state.annotationLabels = state.annotationManagedLabels.map(label => label.name);
   renderAnnotationLabels();
 }
 
@@ -860,6 +941,146 @@ async function loadAnnotations() {
   state.annotations = payload.items || [];
   renderAnnotationsTable();
   await loadAnnotationLabels();
+}
+
+async function loadAnnotationCatalog() {
+  const analysisId = currentAnalysisId();
+  if (!analysisId) return;
+  const [annotationsPayload, summaryPayload] = await Promise.all([
+    api(`/api/analyses/${encodeURIComponent(analysisId)}/annotations`),
+    api(`/api/analyses/${encodeURIComponent(analysisId)}/annotations/summary`),
+  ]);
+  state.annotationCatalog = annotationsPayload.items || [];
+  state.annotationLabelSummary = summaryPayload.items || [];
+  await loadAnnotationLabels();
+  renderAnnotationLabelSummary();
+  renderAnnotationCatalog();
+}
+
+async function loadDynamicAnalysis() {
+  const analysisId = currentAnalysisId();
+  if (!analysisId) return;
+  if (!state.explorationChannels.length && state.explorationFileId) {
+    await loadExplorationChannels();
+  }
+  await loadAnnotationLabels();
+  const analyses = await api(`/api/analyses/${encodeURIComponent(analysisId)}/dynamic-analysis`);
+  state.dynamicAnalyses = analyses.items || [];
+  state.dynamicPrompts = state.dynamicAnalyses;
+  const selected = state.dynamicSelectedAnalysisId || state.dynamicAnalyses[0]?.dynamic_analysis_id || "";
+  state.dynamicSelectedAnalysisId = selected;
+  if (selected) {
+    const predictions = await api(`/api/analyses/${encodeURIComponent(analysisId)}/dynamic-analysis/${encodeURIComponent(selected)}/predictions`);
+    state.dynamicPredictions = predictions.items || [];
+  } else {
+    state.dynamicPredictions = [];
+  }
+  state.dynamicRuns = state.dynamicPredictions;
+  renderDynamicPromptOptions();
+  renderDynamicChannelOptions();
+  renderDynamicLabelOptions();
+  renderDynamicRuns();
+}
+
+async function saveDynamicPrompt() {
+  const analysisId = currentAnalysisId();
+  if (!analysisId) throw new Error("Aucune analyse active");
+  const labelCategory = $("dynamicAnalysisLabelCategorySelect")?.value || selectedDynamicLabels().filter(Boolean)[0] || "";
+  if (!labelCategory) throw new Error("Choisis une catégorie de label");
+  const payload = {
+    name: $("dynamicAnalysisPromptNameInput")?.value.trim() || "Analyse de segments annotés",
+    system_prompt: $("dynamicAnalysisSystemPromptInput")?.value || "",
+    selected_channels: selectedDynamicChannels(),
+    indicators: [],
+    label_category: labelCategory,
+    output_schema: dynamicOutputSchema(),
+  };
+  const dynamicAnalysis = await api(`/api/analyses/${encodeURIComponent(analysisId)}/dynamic-analysis`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+  state.dynamicSelectedAnalysisId = dynamicAnalysis.dynamic_analysis_id;
+  await loadDynamicAnalysis();
+  $("dynamicAnalysisPromptSelect").value = dynamicAnalysis.dynamic_analysis_id;
+  showDynamicAnalysisStep("prepare");
+}
+
+async function buildDynamicContext() {
+  const analysisId = currentAnalysisId();
+  if (!analysisId) throw new Error("Aucune analyse active");
+  const context = await api(`/api/analyses/${encodeURIComponent(analysisId)}/dynamic-analysis/context`, {
+    method: "POST",
+    body: JSON.stringify(dynamicAnalysisPayload()),
+  });
+  renderDynamicContext(context);
+  setDynamicAnalysisStatus(`${context.summary.segment_count} segment(s) dans le contexte.`);
+}
+
+async function runDynamicAnalysis() {
+  const analysisId = currentAnalysisId();
+  if (!analysisId) throw new Error("Aucune analyse active");
+  const dynamicAnalysisId = state.dynamicSelectedAnalysisId || $("dynamicAnalysisPromptSelect")?.value;
+  if (!dynamicAnalysisId) {
+    await saveDynamicPrompt();
+  }
+  const resolvedDynamicAnalysisId = state.dynamicSelectedAnalysisId || $("dynamicAnalysisPromptSelect")?.value;
+  if (!resolvedDynamicAnalysisId) throw new Error("Aucune analyse dynamique configurée");
+  const result = await api(`/api/analyses/${encodeURIComponent(analysisId)}/dynamic-analysis/${encodeURIComponent(resolvedDynamicAnalysisId)}/predictions`, {
+    method: "POST",
+    body: JSON.stringify({
+      user_prompt: $("dynamicAnalysisUserPromptInput")?.value || "",
+      context_before_sec: Number($("dynamicContextBeforeInput")?.value || 0),
+      context_after_sec: Number($("dynamicContextAfterInput")?.value || 0),
+      max_annotations: Number($("dynamicMaxSegmentsInput")?.value || 25),
+      max_points_per_segment: Number($("dynamicMaxPointsInput")?.value || 250),
+      provider: "dry_run",
+      model: null,
+    }),
+  });
+  await loadDynamicAnalysis();
+  if (result.items?.[0]) selectDynamicRun(result.items[0].prediction_id);
+  setDynamicAnalysisStatus(`${result.items?.length || 0} prédiction(s) sauvegardée(s).`);
+  showDynamicAnalysisStep("results");
+}
+
+async function deleteDynamicRun(runId) {
+  if (!runId) return;
+  const analysisId = currentAnalysisId();
+  if (!analysisId) throw new Error("Aucune analyse active");
+  if (!window.confirm("Supprimer cette analyse dynamique ?")) {
+    setStatus("Suppression annulée");
+    return;
+  }
+  await api(`/api/analyses/${encodeURIComponent(analysisId)}/dynamic-analysis/runs/${encodeURIComponent(runId)}`, {
+    method: "DELETE",
+  });
+  if (state.dynamicSelectedRunId === runId) {
+    state.dynamicSelectedRunId = "";
+    $("dynamicAnalysisResult").innerHTML = "";
+    $("dynamicAnalysisCorrectionInput").value = "";
+    $("saveDynamicAnalysisVersionBtn").disabled = true;
+  }
+  await loadDynamicAnalysis();
+}
+
+async function saveDynamicAnalysisVersion() {
+  const analysisId = currentAnalysisId();
+  const predictionId = state.dynamicSelectedPredictionId || state.dynamicSelectedRunId;
+  if (!analysisId || !predictionId) throw new Error("Aucune prédiction sélectionnée");
+  const version = await api(`/api/analyses/${encodeURIComponent(analysisId)}/dynamic-analysis/predictions/${encodeURIComponent(predictionId)}/corrections`, {
+    method: "POST",
+    body: JSON.stringify({
+      corrected_response_markdown: $("dynamicAnalysisCorrectionInput")?.value || "",
+      corrected_response_json: {},
+      corrected_confidence: $("dynamicAnalysisConfidenceSelect")?.value || null,
+      note: $("dynamicAnalysisCorrectionNoteInput")?.value || null,
+      validated_for_dataset: $("dynamicAnalysisValidatedInput")?.checked || false,
+    }),
+  });
+  await loadDynamicAnalysis();
+  const prediction = state.dynamicPredictions.find(item => item.prediction_id === predictionId);
+  if (prediction) selectDynamicRun(predictionId);
+  setDynamicAnalysisStatus(`Correction ${version.correction_id} sauvegardée.`);
 }
 
 async function loadParametricFiles() {
@@ -1093,7 +1314,7 @@ function resetAnnotationForm() {
   state.annotationEditingId = "";
   const start = $("annotationStartInput");
   const end = $("annotationEndInput");
-  const label = $("annotationLabelInput");
+  const label = $("annotationLabelSelect");
   const confidence = $("annotationConfidenceInput");
   const comment = $("annotationCommentInput");
   if (start) start.value = "0";
@@ -1192,7 +1413,7 @@ function editAnnotation(annotationId) {
   state.annotationEditingId = annotationId;
   $("annotationStartInput").value = annotation.start_time_sec;
   $("annotationEndInput").value = annotation.end_time_sec;
-  $("annotationLabelInput").value = annotation.label || "";
+  $("annotationLabelSelect").value = annotation.label || "";
   $("annotationConfidenceInput").value = annotation.confidence ?? "";
   $("annotationCommentInput").value = annotation.comment || "";
   $("saveAnnotationBtn").textContent = "Modifier segment";
@@ -1313,11 +1534,292 @@ function renderAnnotationsTable() {
   });
 }
 
+function formatSeconds(value) {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? `${numeric.toFixed(2)} s` : "-";
+}
+
+function formatNumber(value) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return "-";
+  if (Math.abs(numeric) >= 1000) return numeric.toFixed(0);
+  if (Math.abs(numeric) >= 10) return numeric.toFixed(2);
+  return numeric.toFixed(3);
+}
+
+function annotationDate(value) {
+  return value ? String(value).slice(0, 10) : "";
+}
+
+function filteredAnnotationCatalog() {
+  const label = $("annotationCatalogLabelSelect")?.value || "";
+  const fileFilter = ($("annotationCatalogFileInput")?.value || "").trim().toLowerCase();
+  const dateFrom = $("annotationCatalogDateFromInput")?.value || "";
+  const dateTo = $("annotationCatalogDateToInput")?.value || "";
+  const minDuration = Number($("annotationCatalogMinDurationInput")?.value);
+  const maxDuration = Number($("annotationCatalogMaxDurationInput")?.value);
+  return state.annotationCatalog.filter(annotation => {
+    const date = annotationDate(annotation.recorded_at);
+    const fileName = `${annotation.source_dxd_name || ""} ${annotation.resampled_json_name || ""}`.toLowerCase();
+    const duration = Number(annotation.duration_sec);
+    if (label && annotation.label !== label) return false;
+    if (fileFilter && !fileName.includes(fileFilter)) return false;
+    if (dateFrom && (!date || date < dateFrom)) return false;
+    if (dateTo && (!date || date > dateTo)) return false;
+    if (Number.isFinite(minDuration) && duration < minDuration) return false;
+    if (Number.isFinite(maxDuration) && duration > maxDuration) return false;
+    return true;
+  });
+}
+
+function renderAnnotationLabelSummary() {
+  renderTable(
+    "annotationLabelSummaryTable",
+    [
+      { key: "label", label: "Label", render: row => `<span class="pill ok">${escapeHtml(row.label)}</span>` },
+      { key: "annotation_count", label: "Segments" },
+      { key: "file_count", label: "Fichiers" },
+      { key: "total_duration_sec", label: "Durée cumulée", render: row => formatSeconds(row.total_duration_sec) },
+      { key: "last_used_at", label: "Dernier usage", render: row => escapeHtml(row.last_used_at || "-") },
+    ],
+    state.annotationLabelSummary,
+    "Aucun label annoté"
+  );
+}
+
+function renderAnnotationCatalog() {
+  const rows = filteredAnnotationCatalog();
+  renderTable(
+    "annotationCatalogTable",
+    [
+      {
+        key: "source_dxd_name",
+        label: "Fichier",
+        render: row => `<button type="button" class="link-button annotation-open" data-annotation-id="${escapeHtml(row.annotation_id)}">${escapeHtml(row.resampled_json_name || row.source_dxd_name)}</button>`,
+      },
+      { key: "recorded_at", label: "Date", render: row => escapeHtml(annotationDate(row.recorded_at) || "-") },
+      { key: "label", label: "Label", render: row => `<span class="pill ok">${escapeHtml(row.label)}</span>` },
+      { key: "start_time_sec", label: "Début", render: row => formatSeconds(row.start_time_sec) },
+      { key: "end_time_sec", label: "Fin", render: row => formatSeconds(row.end_time_sec) },
+      { key: "duration_sec", label: "Durée", render: row => formatSeconds(row.duration_sec) },
+      { key: "comment", label: "Commentaire", render: row => escapeHtml(row.comment || "") },
+    ],
+    rows,
+    "Aucune annotation dans le filtre"
+  );
+  $("annotationCatalogStatus").textContent = `${rows.length} annotation(s) affichée(s), ${state.annotationCatalog.length} total.`;
+  document.querySelectorAll(".annotation-open").forEach(button => {
+    button.addEventListener("click", () => {
+      wrapAction(() => openAnnotationFromCatalog(button.dataset.annotationId), "Annotation ouverte")();
+    });
+  });
+}
+
+function selectedDynamicChannels() {
+  return Array.from($("dynamicAnalysisChannelSelect")?.selectedOptions || [])
+    .map(option => option.value);
+}
+
+function selectedDynamicLabels() {
+  return Array.from($("dynamicAnalysisLabelSelect")?.selectedOptions || [])
+    .map(option => option.value);
+}
+
+function dynamicOutputSchema() {
+  const raw = $("dynamicAnalysisOutputSchemaInput")?.value.trim() || "{}";
+  try {
+    return JSON.parse(raw);
+  } catch (error) {
+    throw new Error("Schéma de sortie attendu invalide: JSON attendu.");
+  }
+}
+
+function renderDynamicChannelOptions() {
+  const select = $("dynamicAnalysisChannelSelect");
+  if (!select) return;
+  const previous = new Set(selectedDynamicChannels());
+  const channels = state.explorationChannels.length ? state.explorationChannels : state.annotationChannels;
+  select.innerHTML = channels.length
+    ? channels.map(channel => `<option value="${escapeHtml(channel.value)}">${escapeHtml(channel.label || channel.value)}</option>`).join("")
+    : '<option value="">Aucun canal disponible</option>';
+  Array.from(select.options).forEach((option, index) => {
+    option.selected = previous.has(option.value) || (!previous.size && index < 2);
+  });
+}
+
+function renderDynamicLabelOptions() {
+  const select = $("dynamicAnalysisLabelSelect");
+  const categorySelect = $("dynamicAnalysisLabelCategorySelect");
+  const previous = new Set(selectedDynamicLabels());
+  if (select) {
+    select.innerHTML = state.annotationLabels.length
+      ? state.annotationLabels.map(label => `<option value="${escapeHtml(label)}">${escapeHtml(label)}</option>`).join("")
+      : '<option value="">Aucun label disponible</option>';
+    Array.from(select.options).forEach(option => {
+      option.selected = previous.has(option.value) || !previous.size;
+    });
+  }
+  if (categorySelect) {
+    const previousCategory = categorySelect.value;
+    categorySelect.innerHTML = state.annotationLabels.length
+      ? state.annotationLabels.map(label => `<option value="${escapeHtml(label)}">${escapeHtml(label)}</option>`).join("")
+      : '<option value="">Aucun label disponible</option>';
+    categorySelect.value = state.annotationLabels.includes(previousCategory)
+      ? previousCategory
+      : (state.annotationLabels[0] || "");
+  }
+}
+
+function renderDynamicPromptOptions() {
+  const select = $("dynamicAnalysisPromptSelect");
+  if (!select) return;
+  const previous = select.value;
+  select.innerHTML = [
+    '<option value="">Protocole courant non sauvegardé</option>',
+    ...state.dynamicPrompts.map(prompt => `<option value="${escapeHtml(prompt.dynamic_analysis_id)}">${escapeHtml(prompt.name)} · ${escapeHtml(prompt.label_category)}</option>`),
+  ].join("");
+  select.value = state.dynamicPrompts.some(prompt => prompt.dynamic_analysis_id === previous)
+    ? previous
+    : (state.dynamicSelectedAnalysisId || "");
+}
+
+function dynamicAnalysisPayload() {
+  const dynamicAnalysis = state.dynamicAnalyses.find(item => item.dynamic_analysis_id === $("dynamicAnalysisPromptSelect")?.value);
+  return {
+    name: $("dynamicAnalysisNameInput")?.value.trim() || "Analyse dynamique",
+    provider: "dry_run",
+    model: null,
+    prompt_id: null,
+    system_prompt: $("dynamicAnalysisSystemPromptInput")?.value || "",
+    user_prompt: $("dynamicAnalysisUserPromptInput")?.value || "",
+    channels: selectedDynamicChannels(),
+    labels: [dynamicAnalysis?.label_category || $("dynamicAnalysisLabelCategorySelect")?.value || selectedDynamicLabels().filter(Boolean)[0]].filter(Boolean),
+    output_schema: dynamicOutputSchema(),
+    context_before_sec: Number($("dynamicContextBeforeInput")?.value || 0),
+    context_after_sec: Number($("dynamicContextAfterInput")?.value || 0),
+    max_segments: Number($("dynamicMaxSegmentsInput")?.value || 25),
+    max_points_per_segment: Number($("dynamicMaxPointsInput")?.value || 250),
+  };
+}
+
+function renderDynamicContext(context) {
+  state.dynamicContext = context;
+  const summary = context?.summary || {};
+  const summaryRows = [
+    ["Segments", summary.segment_count ?? 0],
+    ["Fichiers", summary.file_count ?? 0],
+    ["Segments ignorés", summary.skipped_segment_count ?? 0],
+    ["Canaux", (summary.channels || []).join(", ") || "-"],
+    ["Labels", (summary.labels || []).join(", ") || "-"],
+  ];
+  const segmentRows = (context?.segments || []).slice(0, 6).map(segment => {
+    const channels = Object.entries(segment.signal_context?.channels || {})
+      .map(([name, channel]) => {
+        const stats = channel.stats || {};
+        const metrics = channel.metrics || {};
+        return `${name}: amplitude ${formatNumber(stats.amplitude)}, pic ${formatNumber(metrics.peak_abs)}`;
+      })
+      .join(" · ");
+    return `
+      <tr>
+        <td>${escapeHtml(segment.file_name || segment.file_id || "-")}</td>
+        <td>${escapeHtml(segment.label || "-")}</td>
+        <td>${formatNumber(segment.start_time_sec)} - ${formatNumber(segment.end_time_sec)}</td>
+        <td>${escapeHtml(channels || "-")}</td>
+      </tr>
+    `;
+  }).join("");
+  $("dynamicContextSummary").innerHTML = `
+    <div class="summary-grid">
+      ${summaryRows.map(([label, value]) => `
+        <div>
+          <div class="label">${escapeHtml(label)}</div>
+          <div class="value">${escapeHtml(value)}</div>
+        </div>
+      `).join("")}
+    </div>
+    <div class="table-wrap" style="margin-top:12px;">
+      <table>
+        <thead>
+          <tr>
+            <th>Fichier</th>
+            <th>Label</th>
+            <th>Segment (s)</th>
+            <th>Résumé canaux</th>
+          </tr>
+        </thead>
+        <tbody>${segmentRows || '<tr><td colspan="4">Aucun segment dans le contexte.</td></tr>'}</tbody>
+      </table>
+    </div>
+  `;
+  $("dynamicContextPreview").textContent = JSON.stringify(context || {}, null, 2);
+}
+
+function renderDynamicRuns() {
+  renderTable(
+    "dynamicAnalysisRunsTable",
+    [
+      {
+        key: "name",
+        label: "Annotation",
+        render: row => `<button type="button" class="link-button dynamic-run-open" data-run-id="${escapeHtml(row.prediction_id)}">${escapeHtml(row.annotation_id)}</button>`,
+      },
+      { key: "created_at", label: "Date" },
+      { key: "status", label: "Statut", render: row => `<span class="pill">${escapeHtml(row.status)}</span>` },
+      { key: "input_context", label: "Fichier", render: row => escapeHtml(row.input_context?.segment?.file_name || "-") },
+      { key: "confidence", label: "Confiance", render: row => escapeHtml(row.confidence || "-") },
+    ],
+    state.dynamicRuns,
+    "Aucune prédiction"
+  );
+  document.querySelectorAll(".dynamic-run-open").forEach(button => {
+    button.addEventListener("click", () => selectDynamicRun(button.dataset.runId));
+  });
+}
+
+function selectDynamicRun(runId) {
+  const run = state.dynamicRuns.find(item => item.prediction_id === runId || item.run_id === runId);
+  if (!run) return;
+  state.dynamicSelectedRunId = runId;
+  state.dynamicSelectedPredictionId = run.prediction_id || "";
+  renderDynamicContext(run.context || {
+    summary: {
+      segment_count: 1,
+      file_count: 1,
+      skipped_segment_count: 0,
+      channels: Object.keys(run.input_context?.segment?.signal_context?.channels || {}),
+      labels: [run.response_json?.label_category].filter(Boolean),
+    },
+    segments: run.input_context?.segment ? [run.input_context.segment] : [],
+  });
+  $("dynamicAnalysisResult").innerHTML = renderMarkdownLite(run.response_markdown);
+  $("dynamicAnalysisCorrectionInput").value = run.response_markdown || "";
+  $("saveDynamicAnalysisVersionBtn").disabled = false;
+  renderDynamicRuns();
+}
+
+async function openAnnotationFromCatalog(annotationId) {
+  const annotation = state.annotationCatalog.find(item => item.annotation_id === annotationId);
+  if (!annotation) return;
+  showAnnotationStep("annotate");
+  if (!state.annotationFiles.some(file => file.file_id === annotation.file_id)) {
+    if ($("annotationDateFromInput")) $("annotationDateFromInput").value = "";
+    if ($("annotationDateToInput")) $("annotationDateToInput").value = "";
+    await loadAnnotationFiles();
+  }
+  state.annotationFileId = annotation.file_id;
+  $("annotationFileSelect").value = annotation.file_id;
+  await loadAnnotationChannels();
+  await loadAnnotations();
+  await refreshAnnotationPlots();
+  editAnnotation(annotation.annotation_id);
+}
+
 function annotationPayload() {
   const fileId = state.annotationFileId || $("annotationFileSelect")?.value;
   const start = Number($("annotationStartInput")?.value);
   const end = Number($("annotationEndInput")?.value);
-  const label = $("annotationLabelInput")?.value.trim();
+  const label = $("annotationLabelSelect")?.value.trim();
   const confidenceValue = $("annotationConfidenceInput")?.value;
   if (!fileId) throw new Error("Aucun fichier sélectionné");
   if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) {
@@ -1365,6 +1867,7 @@ async function saveAnnotation() {
   }
   resetAnnotationForm();
   await loadAnnotations();
+  await loadAnnotationCatalog();
   await refreshAnnotationPlots();
 }
 
@@ -1380,7 +1883,67 @@ async function deleteAnnotationById(annotationId) {
     resetAnnotationForm();
   }
   await loadAnnotations();
+  await loadAnnotationCatalog();
   await refreshAnnotationPlots();
+}
+
+async function renameAnnotationLabel() {
+  const analysisId = currentAnalysisId();
+  const labelId = $("annotationRenameOldLabelSelect")?.value;
+  const newLabel = $("annotationRenameNewLabelInput")?.value.trim();
+  if (!analysisId) throw new Error("Aucune analyse active");
+  if (!labelId) throw new Error("Aucun label sélectionné");
+  if (!newLabel) throw new Error("Nouveau label requis");
+  const existing = state.annotationManagedLabels.find(label => label.label_id === labelId);
+  await api(`/api/analyses/${encodeURIComponent(analysisId)}/annotation-labels/${encodeURIComponent(labelId)}`, {
+    method: "PATCH",
+    body: JSON.stringify({
+      name: newLabel,
+      description: existing?.description || null,
+      color: existing?.color || null,
+    }),
+  });
+  $("annotationRenameNewLabelInput").value = "";
+  await loadAnnotations();
+  await loadAnnotationCatalog();
+  await refreshAnnotationPlots();
+}
+
+async function deleteSelectedAnnotationLabel() {
+  const analysisId = currentAnalysisId();
+  const labelId = $("annotationRenameOldLabelSelect")?.value;
+  const label = state.annotationManagedLabels.find(item => item.label_id === labelId);
+  if (!analysisId) throw new Error("Aucune analyse active");
+  if (!labelId || !label) throw new Error("Aucun label sélectionné");
+  if (!window.confirm(`Supprimer le label "${label.name}" ? Si le label est utilisé, ses annotations seront aussi supprimées.`)) {
+    setStatus("Suppression annulée");
+    return;
+  }
+  await api(`/api/analyses/${encodeURIComponent(analysisId)}/annotation-labels/${encodeURIComponent(labelId)}?delete_annotations=true`, {
+    method: "DELETE",
+  });
+  await loadAnnotations();
+  await loadAnnotationCatalog();
+  await refreshAnnotationPlots();
+}
+
+async function createAnnotationLabel() {
+  const analysisId = currentAnalysisId();
+  const name = $("annotationNewLabelInput")?.value.trim();
+  if (!analysisId) throw new Error("Aucune analyse active");
+  if (!name) throw new Error("Nom de label requis");
+  await api(`/api/analyses/${encodeURIComponent(analysisId)}/annotation-labels`, {
+    method: "POST",
+    body: JSON.stringify({
+      name,
+      description: $("annotationNewLabelDescriptionInput")?.value.trim() || null,
+      color: $("annotationNewLabelColorInput")?.value || null,
+    }),
+  });
+  $("annotationNewLabelInput").value = "";
+  $("annotationNewLabelDescriptionInput").value = "";
+  await loadAnnotationCatalog();
+  $("annotationLabelSelect").value = name;
 }
 
 function renderFiles() {
@@ -1641,7 +2204,14 @@ async function loadAnalysis(analysisId = currentAnalysisId()) {
     state.annotationFileId = "";
     state.annotations = [];
     state.annotationLabels = [];
+    state.annotationManagedLabels = [];
     state.annotationEditingId = "";
+    state.annotationCatalog = [];
+    state.annotationLabelSummary = [];
+    state.dynamicPrompts = [];
+    state.dynamicRuns = [];
+    state.dynamicContext = null;
+    state.dynamicSelectedRunId = "";
     state.validatedStructure = null;
     renderAll();
     return;
@@ -1656,6 +2226,8 @@ async function loadAnalysis(analysisId = currentAnalysisId()) {
   await loadExplorationFiles();
   await loadAnnotationDateRange();
   await loadAnnotationFiles();
+  await loadAnnotationCatalog();
+  await loadDynamicAnalysis();
   resumeCurrentChannelAnalysis(analysisId);
   resumeCurrentResampling(analysisId);
 }
@@ -1757,7 +2329,14 @@ async function deleteAnalysisById(analysisId) {
   state.annotationFileId = "";
   state.annotations = [];
   state.annotationLabels = [];
+  state.annotationManagedLabels = [];
   state.annotationEditingId = "";
+  state.annotationCatalog = [];
+  state.annotationLabelSummary = [];
+  state.dynamicPrompts = [];
+  state.dynamicRuns = [];
+  state.dynamicContext = null;
+  state.dynamicSelectedRunId = "";
   await loadAnalyses();
   if (state.analyses.length) {
     await loadAnalysis(state.analyses[0].analysis_id);
@@ -1997,8 +2576,12 @@ function bindActions() {
       wrapAction(async () => {
         await loadAnnotationDateRange();
         await loadAnnotationFiles();
+        await loadAnnotationCatalog();
         resizeAnnotationPlotsSoon();
       }, "Annotations chargées")();
+    }
+    if (button.dataset.view === "dynamic-analysis") {
+      wrapAction(loadDynamicAnalysis, "Analyse dynamique chargée")();
     }
   });
 
@@ -2018,6 +2601,19 @@ function bindActions() {
         await refreshParametric();
       }, "Vision paramétrique chargée")();
     }
+  });
+  $("annotationTabs")?.addEventListener("click", event => {
+    const button = event.target.closest("button[data-annotation-step]");
+    if (!button) return;
+    showAnnotationStep(button.dataset.annotationStep);
+    if (button.dataset.annotationStep === "catalog") {
+      wrapAction(loadAnnotationCatalog, "Catalogue annotations chargé")();
+    }
+  });
+  $("dynamicAnalysisTabs")?.addEventListener("click", event => {
+    const button = event.target.closest("button[data-dynamic-step]");
+    if (!button) return;
+    showDynamicAnalysisStep(button.dataset.dynamicStep);
   });
   $("analysisChoiceList")?.addEventListener("click", event => {
     const deleteButton = event.target.closest("button[data-delete-analysis-id]");
@@ -2083,6 +2679,41 @@ function bindActions() {
   });
   $("annotationClickStartBtn")?.addEventListener("click", () => setAnnotationClickTarget("start"));
   $("annotationClickEndBtn")?.addEventListener("click", () => setAnnotationClickTarget("end"));
+  [
+    "annotationCatalogDateFromInput",
+    "annotationCatalogDateToInput",
+    "annotationCatalogLabelSelect",
+    "annotationCatalogFileInput",
+    "annotationCatalogMinDurationInput",
+    "annotationCatalogMaxDurationInput",
+  ].forEach(id => {
+    const node = $(id);
+    ["input", "change"].forEach(eventName => {
+      node?.addEventListener(eventName, renderAnnotationCatalog);
+    });
+  });
+  $("createAnnotationLabelBtn")?.addEventListener("click", wrapAction(createAnnotationLabel, "Label créé"));
+  $("renameAnnotationLabelBtn")?.addEventListener("click", wrapAction(renameAnnotationLabel, "Label renommé"));
+  $("deleteAnnotationLabelBtn")?.addEventListener("click", wrapAction(deleteSelectedAnnotationLabel, "Label supprimé"));
+  $("dynamicAnalysisPromptSelect")?.addEventListener("change", () => {
+    const prompt = state.dynamicPrompts.find(item => item.dynamic_analysis_id === $("dynamicAnalysisPromptSelect").value);
+    if (!prompt) return;
+    state.dynamicSelectedAnalysisId = prompt.dynamic_analysis_id;
+    $("dynamicAnalysisPromptNameInput").value = prompt.name || "";
+    $("dynamicAnalysisProtocolDescriptionInput").value = `Catégorie: ${prompt.label_category || "-"}`;
+    $("dynamicAnalysisSystemPromptInput").value = prompt.system_prompt || "";
+    if ($("dynamicAnalysisLabelCategorySelect")) $("dynamicAnalysisLabelCategorySelect").value = prompt.label_category || "";
+    $("dynamicAnalysisOutputSchemaInput").value = JSON.stringify(prompt.output_schema || {}, null, 2);
+    renderDynamicChannelOptions();
+    Array.from($("dynamicAnalysisChannelSelect")?.options || []).forEach(option => {
+      option.selected = (prompt.selected_channels || []).includes(option.value);
+    });
+    wrapAction(loadDynamicAnalysis, "Analyse dynamique chargée")();
+  });
+  $("saveDynamicPromptBtn")?.addEventListener("click", wrapAction(saveDynamicPrompt, "Protocole sauvegardé"));
+  $("buildDynamicContextBtn")?.addEventListener("click", wrapAction(buildDynamicContext, "Contexte construit"));
+  $("runDynamicAnalysisBtn")?.addEventListener("click", wrapAction(runDynamicAnalysis, "Analyse dynamique lancée"));
+  $("saveDynamicAnalysisVersionBtn")?.addEventListener("click", wrapAction(saveDynamicAnalysisVersion, "Correction sauvegardée"));
   $("saveAnnotationBtn")?.addEventListener("click", wrapAction(saveAnnotation, "Annotation sauvegardée"));
   $("resetAnnotationBtn")?.addEventListener("click", () => {
     resetAnnotationForm();
