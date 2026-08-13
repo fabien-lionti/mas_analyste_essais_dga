@@ -7,7 +7,6 @@ La table centrale est `analyses`.
 Une analyse represente une campagne de travail :
 
 - nom ;
-- type ;
 - statut ;
 - dossier source DXD ;
 - configuration JSON ;
@@ -31,11 +30,13 @@ Champs structurants :
 
 - `analysis_id`
 - `name`
-- `kind`
 - `status`
 - `source_dxd_dir`
 - `config_json`
 - `summary_json`
+
+La colonne SQLite legacy `kind` existe encore dans le schema physique, mais elle
+n'est plus exposee comme champ produit, ni dans l'UI, ni dans l'API de creation.
 
 ### analysis_files
 
@@ -291,6 +292,27 @@ analyses
 | `channel_analysis_tasks.py` | taches longues de scan canaux en memoire |
 | `resampling_tasks.py` | taches longues d'export JSON en memoire |
 | `domain/channels.py` | presets et normalisation/candidats de canaux |
+
+## Indicateurs dynamiques
+
+Les indicateurs dynamiques sont sauvegardes dans `analyses.config_json`, sous la
+cle `dynamic_indicators`.
+
+Structure :
+
+```json
+{
+  "dynamic_indicators": {
+    "selected": ["dynamic.speed_kmh", "dynamic.ltr"],
+    "saved": true,
+    "updated_at": "..."
+  }
+}
+```
+
+Ils sont disponibles seulement apres sauvegarde de la structure canaux. Au moment
+du sampling JSON, les indicateurs selectionnes sont calcules depuis les canaux
+resamples et ajoutes dans `channels.resampled` avec `computed: true`.
 
 ## Migration
 

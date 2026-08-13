@@ -35,6 +35,7 @@ Sous-onglets :
 
 - `Fichiers DXD`
 - `Canaux DXD`
+- `Indicateurs dynamiques`
 - `Sampling JSON`
 
 Responsabilite UI :
@@ -43,6 +44,7 @@ Responsabilite UI :
 - identifier les DXD ;
 - scanner les canaux ;
 - choisir les canaux valides ;
+- choisir les indicateurs dynamiques disponibles ;
 - configurer frequence/methode/dossier ;
 - lancer l'export JSON avec barre de progression.
 
@@ -52,6 +54,8 @@ Fonctions JS principales :
 - `createAnalysis`
 - `loadChannels`
 - `renderChannels`
+- `renderDynamicIndicators`
+- `saveDynamicIndicators`
 - `finalizeAnalysis`
 - `pollChannelAnalysis`
 - `pollResampling`
@@ -138,7 +142,7 @@ Vue : `#view-dynamic-analysis`
 
 Sous-onglets :
 
-- `Creer / modifier`
+- `Analyse dynamique`
 - `Choix analyse dynamique`
 - `Generation / validation`
 

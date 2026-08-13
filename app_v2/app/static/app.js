@@ -47,6 +47,19 @@ const state = {
   dynamicSelectedAnnotationId: "",
 };
 
+const DYNAMIC_INDICATORS = [
+  { id: "dynamic.speed_kmh", description: "Vitesse véhicule en km/h", required: ["vehicle.speed"] },
+  { id: "dynamic.accel_norm", description: "Norme accélération horizontale", required: ["vehicle.ax", "vehicle.ay"] },
+  { id: "dynamic.ltr", description: "Load Transfer Ratio latéral", required: ["wheel.fl.fz", "wheel.fr.fz", "wheel.rl.fz", "wheel.rr.fz"] },
+  { id: "dynamic.load_transfer_front", description: "Transfert de charge latéral avant", required: ["wheel.fl.fz", "wheel.fr.fz"] },
+  { id: "dynamic.load_transfer_rear", description: "Transfert de charge latéral arrière", required: ["wheel.rl.fz", "wheel.rr.fz"] },
+  { id: "dynamic.yaw_rate_error", description: "Écart yaw rate mesuré / cinématique", required: ["vehicle.yaw_rate", "vehicle.ay", "vehicle.speed"] },
+  { id: "dynamic.friction_usage_fl", description: "Utilisation adhérence roue avant gauche", required: ["wheel.fl.fx", "wheel.fl.fy", "wheel.fl.fz"] },
+  { id: "dynamic.friction_usage_fr", description: "Utilisation adhérence roue avant droite", required: ["wheel.fr.fx", "wheel.fr.fy", "wheel.fr.fz"] },
+  { id: "dynamic.friction_usage_rl", description: "Utilisation adhérence roue arrière gauche", required: ["wheel.rl.fx", "wheel.rl.fy", "wheel.rl.fz"] },
+  { id: "dynamic.friction_usage_rr", description: "Utilisation adhérence roue arrière droite", required: ["wheel.rr.fx", "wheel.rr.fy", "wheel.rr.fz"] },
+];
+
 let explorationDateFilterTimer = null;
 let annotationDateFilterTimer = null;
 
@@ -66,6 +79,26 @@ function escapeHtml(value) {
     '"': "&quot;",
     "'": "&#39;",
   }[ch]));
+}
+
+function safeAnalysisDirName(name) {
+  const normalized = String(name || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+  const safe = normalized
+    .replace(/[^A-Za-z0-9_.-]+/g, "_")
+    .replace(/^[_ .-]+|[_ .-]+$/g, "");
+  return safe || "analyse";
+}
+
+function defaultResampledJsonDir(analysis = state.analysis) {
+  return `app_v2/data/${safeAnalysisDirName(analysis?.name || $("analysisNameInput")?.value || "analyse")}/resampled_json`;
+}
+
+function refreshResampledJsonDirInput() {
+  const input = $("resampledJsonDirInput");
+  if (!input) return;
+  input.value = state.analysis?.config?.sampling?.resampled_json_dir || defaultResampledJsonDir();
 }
 
 async function api(path, options = {}) {
@@ -135,12 +168,17 @@ function canUseChannelWorkflow() {
 }
 
 function canUseSamplingWorkflow() {
+  return Boolean(canUseIndicatorWorkflow() && state.analysis?.config?.dynamic_indicators?.saved);
+}
+
+function canUseIndicatorWorkflow() {
   return Boolean(canUseChannelWorkflow() && state.validatedStructure?.selected_channels?.length);
 }
 
 function workflowStepForCurrentAnalysis() {
   if (!currentAnalysisId() || !state.files.length) return "sources";
   if (!state.validatedStructure?.selected_channels?.length) return "channels";
+  if (!state.analysis?.config?.dynamic_indicators?.saved) return "indicators";
   const readiness = state.analysis?.readiness || {};
   const resampledCount = readiness.resampled_json_count ?? state.files.filter(file => file.resampled_json_path).length;
   if (!resampledCount) return "sampling";
@@ -150,7 +188,8 @@ function workflowStepForCurrentAnalysis() {
 function showWorkflowStep(step) {
   let target = step;
   if (target === "channels" && !canUseChannelWorkflow()) target = "sources";
-  if (target === "sampling" && !canUseSamplingWorkflow()) target = canUseChannelWorkflow() ? "channels" : "sources";
+  if (target === "indicators" && !canUseIndicatorWorkflow()) target = canUseChannelWorkflow() ? "channels" : "sources";
+  if (target === "sampling" && !canUseSamplingWorkflow()) target = canUseIndicatorWorkflow() ? "indicators" : (canUseChannelWorkflow() ? "channels" : "sources");
   state.workflowStep = target;
   document.querySelectorAll("[data-workflow-step]").forEach(button => {
     button.classList.toggle("active", button.dataset.workflowStep === target);
@@ -206,6 +245,10 @@ function renderWorkflowState() {
   if (samplingTab) {
     samplingTab.disabled = !canUseSamplingWorkflow();
   }
+  const indicatorsTab = $("workflowIndicatorsTab");
+  if (indicatorsTab) {
+    indicatorsTab.disabled = !canUseIndicatorWorkflow();
+  }
   const finalizeButton = $("finalizeAnalysisBtn");
   if (finalizeButton) {
     finalizeButton.disabled = state.resamplingRunning || !canUseSamplingWorkflow();
@@ -223,12 +266,12 @@ function analysisSummaryRows() {
   const exportedCount = readiness.resampled_json_count ?? state.files.filter(file => file.resampled_json_path).length;
   return [
     ["Analyse", state.analysis?.name || "-"],
-    ["Type", state.analysis?.kind || "-"],
     ["Statut utilisation", readiness.ready ? "Prête" : "Incomplète"],
     ["Étapes manquantes", (readiness.missing_steps || []).join(", ") || "-"],
     ["Fichiers DXD", readiness.file_count ?? state.files.length],
     ["JSON exportés", exportedCount],
     ["Canaux sélectionnés", readiness.selected_channel_count ?? state.validatedStructure?.selected_channels?.length ?? state.selectedChannels.size ?? 0],
+    ["Indicateurs dynamiques", readiness.dynamic_indicator_count ?? state.analysis?.config?.dynamic_indicators?.selected?.length ?? 0],
     ["Canaux récurrents", readiness.recurrent_channel_count ?? state.recurrent.length ?? state.channelStatus?.summary?.recurrent_channel_count ?? 0],
     ["Fréquence sampling", sampling.target_frequency_hz ? `${sampling.target_frequency_hz} Hz` : "-"],
     ["Méthode interpolation", sampling.method || "-"],
@@ -262,7 +305,7 @@ function renderAnalysisChoice() {
                 <strong>${escapeHtml(item.name)}</strong>
                 ${analysisReadinessBadge(item.readiness)}
               </span>
-              <span class="muted">${escapeHtml(item.kind)} · ${escapeHtml(item.readiness?.file_count ?? 0)} DXD · ${escapeHtml(item.readiness?.resampled_json_count ?? 0)} JSON</span>
+              <span class="muted">${escapeHtml(item.readiness?.file_count ?? 0)} DXD · ${escapeHtml(item.readiness?.resampled_json_count ?? 0)} JSON</span>
               <span class="muted">${escapeHtml(analysisMissingText(item.readiness))}</span>
             </button>
             <button type="button" class="danger choice-delete" data-delete-analysis-id="${escapeHtml(item.analysis_id)}">Supprimer</button>
@@ -2134,6 +2177,7 @@ async function createAnnotationLabel() {
 }
 
 function renderFiles() {
+  if (!$("filesTable")) return;
   renderTable(
     "filesTable",
     [
@@ -2183,6 +2227,10 @@ function renderChannelStatus() {
   const activeChannels = state.selectedChannels.size
     ? Array.from(state.selectedChannels)
     : savedChannels;
+  const saveButton = $("saveChannelStructureBtn");
+  if (saveButton) {
+    saveButton.disabled = !activeChannels.length;
+  }
   const activeChannelsHtml = activeChannels.length
     ? `
       <div class="channel-structure-list">
@@ -2194,6 +2242,7 @@ function renderChannelStatus() {
     $("channelStatus").innerHTML = `
       <div class="stack">
         <div class="empty compact-empty">Aucune structure sauvegardée</div>
+        <div class="muted">Coche les canaux à gauche, puis clique sur le bouton ci-dessus pour valider la structure active.</div>
         <div>
           <h3>Structure active</h3>
           <div class="muted">Sélection en cours: <strong>${escapeHtml(activeChannels.length)}</strong> canal(aux)</div>
@@ -2285,6 +2334,69 @@ function renderChannels() {
   renderChannelStatus();
 }
 
+function selectedDynamicIndicatorIds() {
+  return Array.from(document.querySelectorAll(".dynamic-indicator-select:checked"))
+    .map(input => input.dataset.indicatorId)
+    .filter(Boolean);
+}
+
+function dynamicIndicatorRows() {
+  const availableChannels = new Set(state.validatedStructure?.selected_channels || []);
+  const configured = new Set(state.analysis?.config?.dynamic_indicators?.selected || []);
+  return DYNAMIC_INDICATORS.map(indicator => {
+    const missing = indicator.required.filter(channel => !availableChannels.has(channel));
+    return {
+      ...indicator,
+      available: missing.length === 0,
+      missing,
+      selected: configured.has(indicator.id),
+    };
+  });
+}
+
+function renderDynamicIndicators() {
+  const status = $("dynamicIndicatorStatus");
+  if (status) {
+    if (!state.validatedStructure?.selected_channels?.length) {
+      status.textContent = "Sauvegarde la structure canaux pour calculer la disponibilité.";
+    } else if (state.analysis?.config?.dynamic_indicators?.saved) {
+      const count = state.analysis.config.dynamic_indicators.selected?.length || 0;
+      status.textContent = `${count} indicateur(s) sauvegardé(s).`;
+    } else {
+      status.textContent = "Sélectionne les indicateurs disponibles à exporter, puis sauvegarde.";
+    }
+  }
+  renderTable(
+    "dynamicIndicatorsTable",
+    [
+      {
+        key: "selected",
+        label: "",
+        render: row => `<input type="checkbox" class="dynamic-indicator-select" data-indicator-id="${escapeHtml(row.id)}" ${row.selected ? "checked" : ""} ${row.available ? "" : "disabled"}>`,
+      },
+      { key: "id", label: "Indicateur" },
+      { key: "description", label: "Description" },
+      { key: "required", label: "Canaux requis", render: row => escapeHtml(row.required.join(", ")) },
+      { key: "available", label: "Disponibilité", render: row => row.available ? '<span class="pill ok">Disponible</span>' : '<span class="pill warn">Indisponible</span>' },
+      { key: "missing", label: "Manquants", render: row => escapeHtml(row.missing.join(", ") || "-") },
+    ],
+    state.validatedStructure?.selected_channels?.length ? dynamicIndicatorRows() : [],
+    "Aucune structure canaux sauvegardée."
+  );
+}
+
+function selectAllAvailableDynamicIndicators() {
+  document.querySelectorAll(".dynamic-indicator-select:not(:disabled)").forEach(input => {
+    input.checked = true;
+  });
+}
+
+function clearDynamicIndicators() {
+  document.querySelectorAll(".dynamic-indicator-select").forEach(input => {
+    input.checked = false;
+  });
+}
+
 function updatePresetOptions(force = true) {
   const selected = $("presetSelect")?.value || "minimum";
   const preset = state.presets?.[selected];
@@ -2364,6 +2476,7 @@ function renderAll() {
   renderEvents();
   renderPresets();
   renderChannels();
+  renderDynamicIndicators();
   renderWorkflowState();
   renderAnalysisChoice();
 }
@@ -2443,6 +2556,7 @@ async function loadAnalysis(analysisId = currentAnalysisId()) {
   state.annotationEditingId = "";
   await Promise.all([loadFiles(), loadEvents(), loadChannels()]);
   state.workflowStep = workflowStepForCurrentAnalysis();
+  refreshResampledJsonDirInput();
   renderAll();
   await loadExplorationDateRange();
   await loadExplorationFiles();
@@ -2506,7 +2620,6 @@ async function createAnalysis() {
     method: "POST",
     body: JSON.stringify({
       name,
-      kind: $("analysisKindInput").value,
       source_dxd_dir: sourceDxdDir || null,
       config: { source: "ui" },
     }),
@@ -2620,15 +2733,42 @@ async function saveChannelStructure() {
   });
   await loadChannels();
   if (state.selectedChannels.size) {
-    showWorkflowStep("sampling");
+    await api(`/api/analyses/${encodeURIComponent(analysisId)}/config`, {
+      method: "PATCH",
+      body: JSON.stringify({ config: { dynamic_indicators: { selected: [], saved: false } } }),
+    });
+    await loadAnalysis(analysisId);
+    showWorkflowStep("indicators");
   }
+}
+
+async function saveDynamicIndicators() {
+  const analysisId = currentAnalysisId();
+  if (!analysisId) throw new Error("Aucune analyse active");
+  if (!state.validatedStructure?.selected_channels?.length) throw new Error("Sauvegarde d'abord la structure canaux");
+  const selected = selectedDynamicIndicatorIds();
+  await api(`/api/analyses/${encodeURIComponent(analysisId)}/config`, {
+    method: "PATCH",
+    body: JSON.stringify({
+      config: {
+        dynamic_indicators: {
+          selected,
+          saved: true,
+          updated_at: new Date().toISOString(),
+        },
+      },
+    }),
+  });
+  await loadAnalysis(analysisId);
+  showWorkflowStep("sampling");
 }
 
 async function finalizeAnalysis() {
   const analysisId = currentAnalysisId();
   if (!analysisId) throw new Error("Aucune analyse active");
   if (!state.files.length) throw new Error("Aucun fichier DXD identifié");
-  if (!state.selectedChannels.size) throw new Error("Aucun canal sélectionné");
+  if (!state.validatedStructure?.selected_channels?.length) throw new Error("Aucune structure canaux sauvegardée");
+  if (!state.analysis?.config?.dynamic_indicators?.saved) throw new Error("Sauvegarde d'abord les indicateurs dynamiques");
   const samplingRate = Number($("samplingRateInput").value);
   if (!Number.isFinite(samplingRate) || samplingRate <= 0) {
     throw new Error("Fréquence de sampling invalide");
@@ -2646,7 +2786,6 @@ async function finalizeAnalysis() {
       },
     }),
   });
-  await saveChannelStructure();
   const pollId = ++state.resamplingPollId;
   setResamplingRunning(true, { percent: 0, message: "Démarrage" });
   try {
@@ -3038,6 +3177,9 @@ function bindActions() {
   $("selectAllRecurrentBtn").addEventListener("click", selectAllRecurrent);
   $("clearRecurrentBtn").addEventListener("click", clearRecurrent);
   $("saveChannelStructureBtn").addEventListener("click", wrapAction(saveChannelStructure, "Structure sauvegardée"));
+  $("selectAllIndicatorsBtn")?.addEventListener("click", selectAllAvailableDynamicIndicators);
+  $("clearIndicatorsBtn")?.addEventListener("click", clearDynamicIndicators);
+  $("saveDynamicIndicatorsBtn")?.addEventListener("click", wrapAction(saveDynamicIndicators, "Indicateurs sauvegardés"));
   $("finalizeAnalysisBtn").addEventListener("click", wrapAction(finalizeAnalysis, "Analyse créée et export JSON terminé"));
   $("cancelResamplingBtn").addEventListener("click", wrapAction(cancelResampling, "Arrêt demandé"));
   $("channelSearchInput").addEventListener("input", event => {

@@ -21,7 +21,6 @@ def test_create_and_get_analysis(tmp_path: Path):
         analysis = create_analysis(
             conn,
             name="Campagne DXD",
-            kind="campaign",
             source_dxd_dir="/tmp/acquisitions",
             config={"target_hz": 100},
         )
@@ -30,7 +29,6 @@ def test_create_and_get_analysis(tmp_path: Path):
         loaded = get_analysis(conn, analysis["analysis_id"])
         assert loaded is not None
         assert loaded["name"] == "Campagne DXD"
-        assert loaded["kind"] == "campaign"
         assert loaded["status"] == "active"
         assert loaded["source_dxd_dir"] == "/tmp/acquisitions"
         assert loaded["config"] == {"target_hz": 100}

@@ -267,7 +267,6 @@ def build_dynamic_context(
         "analysis": {
             "analysis_id": analysis_id,
             "name": analysis["name"],
-            "kind": analysis["kind"],
         },
             "request": model_payload(payload),
         "summary": {

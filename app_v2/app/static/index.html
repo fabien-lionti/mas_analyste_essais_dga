@@ -32,20 +32,14 @@
           <div class="subtabs" id="analysisWorkflowTabs">
             <button type="button" class="active" data-workflow-step="sources">1. Fichiers DXD</button>
             <button type="button" data-workflow-step="channels" id="workflowChannelsTab">2. Canaux DXD</button>
-            <button type="button" data-workflow-step="sampling" id="workflowSamplingTab">3. Sampling JSON</button>
+            <button type="button" data-workflow-step="indicators" id="workflowIndicatorsTab">3. Indicateurs dynamiques</button>
+            <button type="button" data-workflow-step="sampling" id="workflowSamplingTab">4. Sampling JSON</button>
           </div>
           <div class="workflow-step active" id="workflow-sources">
             <div class="grid-3">
               <div>
                 <label for="analysisNameInput">Nom</label>
                 <input id="analysisNameInput" value="Nouvelle campagne DXD">
-              </div>
-              <div>
-                <label for="analysisKindInput">Type</label>
-                <select id="analysisKindInput">
-                  <option value="campaign">campaign</option>
-                  <option value="dxd_campaign">dxd_campaign</option>
-                </select>
               </div>
               <div>
                 <label for="sourceDxdDirInput">Dossier acquisitions DXD</label>
@@ -105,13 +99,15 @@
               <div class="row">
                 <button type="button" id="selectAllRecurrentBtn" class="secondary">Tout sélectionner</button>
                 <button type="button" id="clearRecurrentBtn" class="secondary">Tout désélectionner</button>
-                <button type="button" id="saveChannelStructureBtn" class="secondary">Sauvegarder la structure</button>
               </div>
               <div id="recurrentCount" class="muted"></div>
               <div id="recurrentTable" class="scroll-table compact-table"></div>
             </div>
-            <div class="panel">
+            <div class="panel stack">
               <h2>Structure sauvegardée</h2>
+              <div class="row">
+                <button type="button" id="saveChannelStructureBtn">Sauvegarder la structure de canaux</button>
+              </div>
               <div id="channelStatus"></div>
             </div>
           </div>
@@ -122,6 +118,18 @@
           <div class="panel">
             <h2>Détail des anomalies</h2>
             <div id="anomalyDetailTable"></div>
+          </div>
+        </div>
+        <div class="workflow-step" id="workflow-indicators">
+          <div class="panel stack">
+            <h2>Indicateurs dynamiques</h2>
+            <div class="row">
+              <button type="button" id="selectAllIndicatorsBtn" class="secondary">Tout sélectionner disponible</button>
+              <button type="button" id="clearIndicatorsBtn" class="secondary">Tout désélectionner</button>
+              <button type="button" id="saveDynamicIndicatorsBtn" class="secondary">Sauvegarder les indicateurs</button>
+            </div>
+            <div id="dynamicIndicatorStatus" class="muted">Sauvegarde la structure canaux pour calculer la disponibilité.</div>
+            <div id="dynamicIndicatorsTable" class="scroll-table compact-table"></div>
           </div>
         </div>
         <div class="workflow-step" id="workflow-sampling">
@@ -142,7 +150,7 @@
               </div>
               <div>
                 <label for="resampledJsonDirInput">Dossier JSON cible</label>
-                <input id="resampledJsonDirInput" value="app_v2/data/resampled_json">
+                <input id="resampledJsonDirInput" placeholder="app_v2/data/Nom_analyse/resampled_json">
               </div>
             </div>
             <div class="row">
@@ -159,10 +167,6 @@
               </div>
             </div>
           </div>
-        </div>
-        <div class="panel">
-          <h2>Fichiers rattachés</h2>
-          <div id="filesTable"></div>
         </div>
         <div class="panel">
           <h2>Événements</h2>
@@ -606,6 +610,6 @@
     </main>
   </div>
 
-  <script src="/static/app.js?v=20260724-15"></script>
+  <script src="/static/app.js?v=20260724-16"></script>
 </body>
 </html>

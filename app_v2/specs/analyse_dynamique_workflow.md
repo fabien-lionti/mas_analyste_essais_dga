@@ -23,9 +23,9 @@ Une analyse dynamique decrit une methode d'interpretation de segments annotees :
 - un prompt systeme ;
 - une liste de canaux a utiliser ;
 - une liste d'indicateurs calcules ou attendus ;
-- une categorie de label cible ;
+- une liste de labels pertinents ;
 - des predictions LLM multimodales produites pour les annotations de cette
-  categorie ;
+  selection ;
 - des corrections humaines possibles sur chaque prediction.
 
 L'objectif n'est pas de faire un chat generaliste avec les signaux, mais de
@@ -54,8 +54,8 @@ Champs principaux :
 - `name`
 - `system_prompt`
 - `selected_channels_json`
+- `selected_labels_json`
 - `indicators_json`
-- `label_category`
 - `created_at`
 - `updated_at`
 
@@ -101,54 +101,37 @@ Champs principaux :
 L'onglet principal `Analyse dynamique` doit contenir trois sous-onglets.
 
 ```text
-Creer / modifier -> Choix analyse dynamique -> Generation / validation
+Analyse dynamique -> Choix analyse dynamique -> Generation / validation
 ```
 
-## Sous-onglet 1 - Creer / modifier
+## Sous-onglet 1 - Analyse dynamique
 
-Objectif : creer une analyse dynamique ou modifier une analyse dynamique
-existante.
+Objectif : creer une analyse dynamique et definir les elements qui seront
+utilises par la generation LLM.
 
-Ce sous-onglet remplace les anciens sous-onglets separes `Analyse` et
-`Preparer`. Il contient a la fois la definition de l'analyse dynamique et les
-choix de donnees necessaires a son execution future.
-
-La fin de ce workflow est uniquement :
-
-- `Creer l'analyse dynamique` si aucune analyse dynamique existante n'est
-  selectionnee ;
-- `Modifier l'analyse dynamique` si une analyse dynamique existante est
-  selectionnee.
-
-Il ne doit pas y avoir de sous-onglet `Preparer` separe.
+Si une analyse dynamique porte deja le meme nom pour l'analyse active, la
+creation ecrase l'ancienne definition par mise a jour applicative.
 
 Champs visibles :
 
 - nom de l'analyse dynamique ;
-- nom du protocole ;
-- categorie de label ;
 - description courte ;
 - prompt systeme ;
-- canaux resamples ;
-- segments inclus ;
-- prompt operatoire ;
-- contexte avant/apres ;
-- nombre max de segments ;
-- nombre max de points par segment.
+- tableau des canaux resamples avec cases a cocher ;
+- tableau des labels disponibles avec cases a cocher ;
+- tableau des indicateurs disponibles avec cases a cocher, si l'UI les expose.
 
 Actions :
 
-- `Construire contexte`
 - `Creer l'analyse dynamique`
-- `Modifier l'analyse dynamique`
 
 Comportement attendu :
 
-- construire le contexte affiche un resume lisible ;
 - creer l'analyse dynamique sauvegarde la configuration dans `dynamic_analyses` ;
-- modifier l'analyse dynamique met a jour la configuration existante ;
+- apres creation, l'analyse dynamique apparait dans la liste du sous-onglet
+  `Choix analyse dynamique` ;
 - ce sous-onglet ne doit pas lancer directement les predictions ;
-- le lancement des predictions se fait depuis `Choix analyse dynamique`.
+- le lancement des predictions se fait depuis `Generation / validation`.
 
 Champs a ne pas afficher ici :
 
@@ -166,14 +149,14 @@ Notes :
 Objectif : choisir une analyse dynamique existante rattachee a l'analyse active.
 
 Ce sous-onglet ne sert pas a modifier une analyse dynamique. Toute creation ou
-modification se fait uniquement dans `Creer / modifier`.
+remplacement par nom se fait uniquement dans `Analyse dynamique`.
 
 Contenu attendu :
 
 - liste des analyses dynamiques disponibles ;
 - resume de l'analyse dynamique selectionnee :
   - nom ;
-  - categorie de label ;
+  - labels selectionnes ;
   - canaux ;
   - indicateurs ;
   - nombre de predictions existantes.
@@ -181,6 +164,7 @@ Contenu attendu :
 Actions possibles :
 
 - selectionner une analyse dynamique ;
+- supprimer une analyse dynamique ;
 - ouvrir la vue de generation trajectoire par trajectoire.
 
 Comportement attendu :
@@ -189,7 +173,7 @@ Comportement attendu :
 - le choix determine quelle analyse dynamique sera utilisee dans le sous-onglet
   suivant ;
 - apres selection, le sous-onglet de generation affiche les trajectoires et
-  segments correspondant a la categorie de label de l'analyse dynamique choisie.
+  segments correspondant aux labels selectionnes dans l'analyse dynamique.
 
 Decision a confirmer :
 
@@ -206,8 +190,8 @@ C'est dans ce sous-onglet que le LLM travaille.
 
 Contenu attendu :
 
-- liste ou navigation des trajectoires/annotations correspondant a la categorie
-  de label cible ;
+- liste ou navigation des trajectoires/annotations correspondant aux labels
+  selectionnes ;
 - label courant ;
 - annotation courante ;
 - canaux selectionnes par l'analyse dynamique ;
@@ -332,18 +316,17 @@ Exemples possibles :
 - moyenne ;
 - ecart-type.
 
-### Categories de labels
+### Labels inclus
 
 A confirmer :
 
-- une analyse dynamique cible-t-elle une seule categorie de label ?
-- faut-il permettre plusieurs categories ?
-- faut-il distinguer `label_category` et `labels inclus` ?
+- faut-il imposer au moins un label selectionne ?
+- faut-il permettre des groupes de labels plus tard ?
 
 Hypothese actuelle :
 
-- une analyse dynamique cible une categorie principale ;
-- les predictions sont generees sur les annotations de cette categorie.
+- une analyse dynamique cible une liste de labels ;
+- les predictions sont generees sur les annotations correspondant a ces labels.
 
 ### Correction humaine
 
@@ -361,9 +344,8 @@ Hypothese actuelle :
 ## Criteres d'acceptation
 
 - l'onglet `Analyse dynamique` contient trois sous-onglets ;
-- le sous-onglet `Creer / modifier` permet de creer une analyse dynamique ;
-- le sous-onglet `Creer / modifier` permet de modifier une analyse dynamique
-  existante ;
+- le sous-onglet `Analyse dynamique` permet de creer une analyse dynamique ;
+- si le nom existe deja, la creation ecrase la definition existante ;
 - le sous-onglet `Choix analyse dynamique` permet de selectionner une analyse
   dynamique existante ;
 - le sous-onglet `Choix analyse dynamique` ne permet ni creation ni modification
@@ -388,7 +370,7 @@ Editable :
 ```text
 Nom final des sous-onglets :
 
-Champs exacts du sous-onglet Creer / modifier :
+Champs exacts du sous-onglet Analyse dynamique :
 
 Contenu exact du sous-onglet Choix analyse dynamique :
 

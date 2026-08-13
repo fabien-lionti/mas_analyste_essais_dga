@@ -95,8 +95,8 @@ app_v2/
 data/
   acquisitions/
       .gitkeep
-  resampled_json/
-      {analysis_name_slug}/
+  {analysis_name_slug}/
+    resampled_json/
         *.json
   model_artifacts/
       .gitkeep
@@ -115,7 +115,7 @@ data/
 
 ```text
 data/acquisitions/**/*.dxd
-data/resampled_json/{analysis_name_slug}/**/*.json
+data/{analysis_name_slug}/resampled_json/**/*.json
 data/model_artifacts/{analysis_id}/{model_version_id}/...
 ```
 
@@ -127,7 +127,7 @@ Les JSON re-echantillonnes doivent etre regroupes dans un dossier derive du nom
 de l'analyse, par exemple :
 
 ```text
-data/resampled_json/campagne-avril-2025/
+data/campagne-avril-2025/resampled_json/
   run_001.json
   run_002.json
 ```
@@ -170,6 +170,7 @@ Une analyse contient :
 - des fichiers `.dxd` ;
 - leurs JSON re-echantillonnes ;
 - une structure de canaux ;
+- des indicateurs dynamiques selectionnes ;
 - des annotations versionnees ;
 - des taches metier ;
 - des modeles et versions de modeles ;
@@ -178,8 +179,9 @@ Une analyse contient :
 
 Dans le workflow utilisateur courant, une analyse est creee comme un ensemble de
 fichiers `.dxd` auquel on associe une structure de canaux validee et des
-parametres de sampling. Le bouton final de creation lance ensuite l'export des
-`.dxd` selectionnes en `.json` re-echantillonnes dans le dossier de l'analyse.
+indicateurs dynamiques, puis des parametres de sampling. Le bouton final de
+creation lance ensuite l'export des `.dxd` selectionnes en `.json`
+re-echantillonnes dans le dossier de l'analyse.
 
 ### Tache metier
 
@@ -229,7 +231,6 @@ modele avec :
 CREATE TABLE analyses (
   analysis_id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
-  kind TEXT NOT NULL,
   status TEXT NOT NULL,
   source_dxd_dir TEXT,
   created_at TEXT NOT NULL,
@@ -238,6 +239,10 @@ CREATE TABLE analyses (
   summary_json TEXT NOT NULL
 );
 ```
+
+Note implementation actuelle : la base SQLite contient encore une colonne
+legacy `kind` sur `analyses`, renseignee en interne avec une valeur fixe. Elle ne
+fait plus partie du modele produit expose a l'utilisateur.
 
 ### analysis_files
 
@@ -746,17 +751,18 @@ mais uniquement comme adaptateurs qui exigent un `analysis_id`.
 3. Scanner les acquisitions et remplir `analysis_files`.
 4. Analyser la structure recurrente des canaux.
 5. Choisir le sous-ensemble de canaux.
-6. Choisir le sampling JSON : frequence cible, methode d'interpolation, dossier
+6. Choisir les indicateurs dynamiques calculables a partir des canaux retenus.
+7. Choisir le sampling JSON : frequence cible, methode d'interpolation, dossier
    cible derive du nom de l'analyse.
-7. Exporter les JSON re-echantillonnes dans le dossier de l'analyse.
-8. Creer un jeu d'annotations.
-9. Annoter des segments avec versionnage.
-10. Lancer des taches metier comme `rollover` sur fichiers ou versions
+8. Exporter les JSON re-echantillonnes dans le dossier de l'analyse.
+9. Creer un jeu d'annotations.
+10. Annoter des segments avec versionnage.
+11. Lancer des taches metier comme `rollover` sur fichiers ou versions
    d'annotations.
-11. Entrainer des modeles rattaches a l'analyse.
-12. Stocker les poids sur disque, indexes par `model_artifacts`.
-13. Generer des predictions rattachees a une version de modele.
-14. Consulter exploration descriptive, annotations, predictions et resultats via
+12. Entrainer des modeles rattaches a l'analyse.
+13. Stocker les poids sur disque, indexes par `model_artifacts`.
+14. Generer des predictions rattachees a une version de modele.
+15. Consulter exploration descriptive, annotations, predictions et resultats via
     des endpoints scopes par `analysis_id`.
 
 ## Interface actuelle app_v2
@@ -766,11 +772,14 @@ principal `Creer une analyse`.
 
 Sous-onglets :
 
-1. `Fichiers DXD` : nom de l'analyse, type, dossier source DXD, rattachement des
+1. `Fichiers DXD` : nom de l'analyse, dossier source DXD, rattachement des
    fichiers et scan recursif optionnel.
 2. `Canaux DXD` : scan de la structure DXD, selection des canaux recurrents,
    sauvegarde de la structure et affichage de la structure active.
-3. `Sampling JSON` : frequence cible, methode d'interpolation, dossier JSON
+3. `Indicateurs dynamiques` : selection des indicateurs calculables selon les
+   canaux sauvegardes. Les indicateurs indisponibles restent visibles avec leurs
+   canaux manquants.
+4. `Sampling JSON` : frequence cible, methode d'interpolation, dossier JSON
    cible, bouton final de creation qui lance l'export JSON avec barre de
    progression.
 
@@ -793,10 +802,13 @@ d'une analyse charge un resume comprenant notamment :
 - Pas de migration des donnees courantes.
 - Repartir de zero dans `app_v2`.
 - SQLite est la source de verite metier.
-- `.dxd` et `.json` de resampling restent les seules donnees applicatives sur disque.
-- Les JSON de resampling sont stockes dans un dossier derive du nom de l'analyse.
-- Les poids de modeles restent localement sur disque pour pragmatisme, mais sont
-  toujours rattaches a une version de modele en base.
+- Les `.dxd`, les `.json` de resampling et les artefacts visuels d'analyse
+  dynamique sont les donnees applicatives autorisees sur disque aujourd'hui.
+- Les JSON de resampling sont stockes dans
+  `app_v2/data/{nom_analyse_normalise}/resampled_json`.
+- Les poids de modeles restent une cible future : s'ils sont ajoutes plus tard,
+  ils devront rester localement sur disque et etre rattaches a une version de
+  modele en base.
 - Les annotations sont versionnees.
 - Les splits train/validation/test sont rattaches a une version de modele.
 - Les predictions sont accessibles par endpoints.

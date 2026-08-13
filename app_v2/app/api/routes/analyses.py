@@ -22,7 +22,6 @@ router = APIRouter(prefix="/api/analyses", tags=["analyses"])
 
 class CreateAnalysisRequest(BaseModel):
     name: str = Field(min_length=1, max_length=160)
-    kind: str = Field(default="campaign", min_length=1, max_length=80)
     source_dxd_dir: Optional[str] = None
     config: Dict[str, Any] = Field(default_factory=dict)
 
@@ -36,7 +35,6 @@ def create_analysis_endpoint(payload: CreateAnalysisRequest, conn: Connection = 
     return create_analysis(
         conn,
         name=payload.name.strip(),
-        kind=payload.kind.strip(),
         source_dxd_dir=payload.source_dxd_dir,
         config=payload.config,
     )

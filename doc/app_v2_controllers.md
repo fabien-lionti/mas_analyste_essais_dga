@@ -106,7 +106,10 @@ Endpoints :
 Responsabilite :
 
 - lancer l'export JSON des DXD avec les canaux selectionnes ;
-- stocker les JSON dans un dossier coherent avec l'analyse ;
+- lire `config.dynamic_indicators.selected` et ajouter les indicateurs calcules
+  dans `channels.resampled` ;
+- stocker les JSON dans le dossier par defaut
+  `app_v2/data/{nom_analyse_normalise}/resampled_json` ;
 - exposer la progression.
 
 ## Exploration

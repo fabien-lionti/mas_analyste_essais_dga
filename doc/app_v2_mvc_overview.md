@@ -33,7 +33,8 @@ rattaches a une analyse.
 2. Les DXD sont rattaches via `POST /api/analyses/{analysis_id}/files/discover-dxd`.
 3. Le scan canaux est lance via `POST /api/analyses/{analysis_id}/channels/analyze`.
 4. Une structure de canaux validee est sauvegardee.
-5. Le sampling JSON exporte les fichiers resamples.
+5. Les indicateurs dynamiques calculables sont choisis et sauvegardes.
+6. Le sampling JSON exporte les fichiers resamples et les indicateurs retenus.
 
 ### Exploration
 

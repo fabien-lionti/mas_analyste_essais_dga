@@ -18,7 +18,6 @@ def row_to_analysis(row: sqlite3.Row) -> dict[str, Any]:
     return {
         "analysis_id": row["analysis_id"],
         "name": row["name"],
-        "kind": row["kind"],
         "status": row["status"],
         "source_dxd_dir": row["source_dxd_dir"],
         "created_at": row["created_at"],
@@ -60,6 +59,11 @@ def _analysis_readiness(conn: sqlite3.Connection, analysis_id: str) -> dict[str,
     resampled_files = int(files["resampled_files"] or 0)
     recurrent_channels = _json_loads(channel_structure["recurrent_channels_json"], []) if channel_structure else []
     selected_channels = _json_loads(validated_structure["selected_channels_json"], []) if validated_structure else []
+    analysis_config = _json_loads(
+        conn.execute("SELECT config_json FROM analyses WHERE analysis_id = ?", (analysis_id,)).fetchone()["config_json"],
+        {},
+    )
+    dynamic_indicators = analysis_config.get("dynamic_indicators", {})
 
     missing_steps: list[str] = []
     if total_files == 0:
@@ -68,6 +72,8 @@ def _analysis_readiness(conn: sqlite3.Connection, analysis_id: str) -> dict[str,
         missing_steps.append("Scan canaux à lancer")
     if not selected_channels:
         missing_steps.append("Structure canaux à sauvegarder")
+    if selected_channels and not dynamic_indicators.get("saved"):
+        missing_steps.append("Indicateurs dynamiques à sauvegarder")
     if resampled_files == 0:
         missing_steps.append("JSON resamplés à exporter")
 
@@ -79,6 +85,8 @@ def _analysis_readiness(conn: sqlite3.Connection, analysis_id: str) -> dict[str,
         "resampled_json_count": resampled_files,
         "recurrent_channel_count": len(recurrent_channels),
         "selected_channel_count": len(selected_channels),
+        "dynamic_indicator_count": len(dynamic_indicators.get("selected", [])),
+        "dynamic_indicators_saved": bool(dynamic_indicators.get("saved")),
         "channel_scan_status": channel_structure["status"] if channel_structure else "not_started",
         "validated_structure_status": validated_structure["status"] if validated_structure else "missing",
     }
@@ -92,7 +100,6 @@ def create_analysis(
     conn: sqlite3.Connection,
     *,
     name: str,
-    kind: str = "campaign",
     source_dxd_dir: str | None = None,
     config: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
@@ -110,7 +117,7 @@ def create_analysis(
         (
             analysis_id,
             name,
-            kind,
+            "analysis",
             "active",
             source_dxd_dir,
             ts,

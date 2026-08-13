@@ -21,6 +21,7 @@ from app_v2.app.db.repositories.channels import (
 from app_v2.app.db.repositories.files import discover_dxd_files
 from app_v2.app.services.channel_structure_service import analyze_channel_structure
 from app_v2.app.services.channel_validation_service import save_validated_channel_structure
+from app_v2.app.services.resampling_service import add_dynamic_indicators, default_analysis_resampled_json_dir
 
 
 class FakeChannel:
@@ -219,6 +220,34 @@ def test_save_validated_structure_generates_missing_channel_anomalies(tmp_path: 
         assert anomalies[0]["details"] == "canal récurrent sélectionné absent de ce fichier"
     finally:
         conn.close()
+
+
+def test_add_dynamic_indicators_computes_available_channels():
+    resampled = {
+        "vehicle.speed": {"values": [10.0, 20.0]},
+        "vehicle.ax": {"values": [3.0, 0.0]},
+        "vehicle.ay": {"values": [4.0, 5.0]},
+        "wheel.fl.fz": {"values": [100.0, 100.0]},
+        "wheel.fr.fz": {"values": [80.0, 100.0]},
+        "wheel.rl.fz": {"values": [90.0, 100.0]},
+        "wheel.rr.fz": {"values": [70.0, 100.0]},
+    }
+
+    exported = add_dynamic_indicators(
+        resampled,
+        ["dynamic.speed_kmh", "dynamic.accel_norm", "dynamic.ltr", "dynamic.yaw_rate_error"],
+    )
+
+    assert exported == ["dynamic.speed_kmh", "dynamic.accel_norm", "dynamic.ltr"]
+    assert resampled["dynamic.speed_kmh"]["computed"] is True
+    assert resampled["dynamic.speed_kmh"]["values"] == [36.0, 72.0]
+    assert resampled["dynamic.accel_norm"]["values"] == [5.0, 5.0]
+
+
+def test_default_resampled_json_dir_uses_analysis_name():
+    path = default_analysis_resampled_json_dir({"name": "Test analyse épreuve 1"})
+
+    assert str(path).endswith("app_v2/data/Test_analyse_epreuve_1/resampled_json")
 
 
 def test_inventory_deduplicates_channels_with_same_canonical_name(tmp_path: Path):

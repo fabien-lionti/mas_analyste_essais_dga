@@ -16,8 +16,11 @@ def test_root_serves_ui_html():
     assert "Analyse active" not in html
     assert 'id="createAnalysisBtn"' in html
     assert "Analyse des canaux en cours" in html
-    assert "Sauvegarder la structure" in html
+    assert "Sauvegarder la structure de canaux" in html
     assert "Canaux DXD" in html
+    assert "Indicateurs dynamiques" in html
+    assert 'id="dynamicIndicatorsTable"' in html
+    assert 'id="saveDynamicIndicatorsBtn"' in html
     assert "Sampling JSON" in html
     assert "Choix analyse" in html
     assert "Analyse dynamique" in html

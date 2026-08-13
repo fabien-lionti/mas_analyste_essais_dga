@@ -77,7 +77,6 @@ def test_analysis_api_and_dxd_discovery(tmp_path: Path):
         analysis = create_analysis_endpoint(
             CreateAnalysisRequest(
                 name="Analyse test",
-                kind="campaign",
                 source_dxd_dir=str(dxd_dir),
                 config={"note": "unit"},
             ),
