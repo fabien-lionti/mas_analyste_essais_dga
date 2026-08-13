@@ -18,8 +18,8 @@ def _json_loads(value: str | None, default: Any) -> Any:
     return json.loads(value)
 
 
-def file_id_for_path(path: Path) -> str:
-    digest = hashlib.sha1(str(path.resolve()).encode("utf-8")).hexdigest()
+def file_id_for_path(path: Path, analysis_id: str) -> str:
+    digest = hashlib.sha1(f"{analysis_id}:{path.resolve()}".encode("utf-8")).hexdigest()
     return f"file_{digest[:24]}"
 
 
@@ -60,7 +60,7 @@ def discover_dxd_files(
 
     for path in files:
         stat = path.stat()
-        file_id = file_id_for_path(path)
+        file_id = file_id_for_path(path, analysis_id)
         metadata = {
             "size_bytes": stat.st_size,
             "modified_at": ts_from_stat(stat.st_mtime),

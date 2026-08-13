@@ -298,8 +298,11 @@ def row_to_dynamic_analysis(row: sqlite3.Row) -> dict[str, Any]:
         "dynamic_analysis_id": row["dynamic_analysis_id"],
         "analysis_id": row["analysis_id"],
         "name": row["name"],
+        "protocol_name": row["protocol_name"],
+        "description": row["description"],
         "system_prompt": row["system_prompt"],
         "selected_channels": _json_loads(row["selected_channels_json"], []),
+        "selected_labels": _json_loads(row["selected_labels_json"], []),
         "indicators": _json_loads(row["indicators_json"], []),
         "label_category": row["label_category"],
         "output_schema": _json_loads(row["output_schema_json"], {}),
@@ -337,13 +340,34 @@ def get_dynamic_analysis(
     return row_to_dynamic_analysis(row) if row else None
 
 
+def get_dynamic_analysis_by_name(
+    conn: sqlite3.Connection,
+    analysis_id: str,
+    name: str,
+) -> dict[str, Any] | None:
+    init_db(conn)
+    row = conn.execute(
+        """
+        SELECT * FROM dynamic_analyses
+        WHERE analysis_id = ? AND lower(trim(name)) = lower(trim(?))
+        ORDER BY updated_at DESC
+        LIMIT 1
+        """,
+        (analysis_id, name),
+    ).fetchone()
+    return row_to_dynamic_analysis(row) if row else None
+
+
 def create_dynamic_analysis(
     conn: sqlite3.Connection,
     *,
     analysis_id: str,
     name: str,
+    protocol_name: str,
+    description: str | None,
     system_prompt: str,
     selected_channels: list[str],
+    selected_labels: list[str] | None = None,
     indicators: list[dict[str, Any]] | list[str],
     label_category: str,
     output_schema: dict[str, Any],
@@ -354,18 +378,21 @@ def create_dynamic_analysis(
     conn.execute(
         """
         INSERT INTO dynamic_analyses(
-          dynamic_analysis_id, analysis_id, name, system_prompt,
-          selected_channels_json, indicators_json, label_category,
+          dynamic_analysis_id, analysis_id, name, protocol_name, description, system_prompt,
+          selected_channels_json, selected_labels_json, indicators_json, label_category,
           output_schema_json, created_at, updated_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             dynamic_analysis_id,
             analysis_id,
             name,
+            protocol_name,
+            description,
             system_prompt,
             json.dumps(selected_channels, ensure_ascii=False),
+            json.dumps(selected_labels or [], ensure_ascii=False),
             json.dumps(indicators, ensure_ascii=False),
             label_category,
             json.dumps(output_schema, ensure_ascii=False),
@@ -380,6 +407,69 @@ def create_dynamic_analysis(
     return created
 
 
+def update_dynamic_analysis(
+    conn: sqlite3.Connection,
+    *,
+    analysis_id: str,
+    dynamic_analysis_id: str,
+    name: str,
+    protocol_name: str,
+    description: str | None,
+    system_prompt: str,
+    selected_channels: list[str],
+    selected_labels: list[str] | None = None,
+    indicators: list[dict[str, Any]] | list[str],
+    label_category: str,
+    output_schema: dict[str, Any],
+) -> dict[str, Any] | None:
+    init_db(conn)
+    ts = now_iso()
+    cursor = conn.execute(
+        """
+        UPDATE dynamic_analyses
+        SET name = ?, protocol_name = ?, description = ?, system_prompt = ?, selected_channels_json = ?,
+            selected_labels_json = ?, indicators_json = ?, label_category = ?, output_schema_json = ?,
+            updated_at = ?
+        WHERE analysis_id = ? AND dynamic_analysis_id = ?
+        """,
+        (
+            name,
+            protocol_name,
+            description,
+            system_prompt,
+            json.dumps(selected_channels, ensure_ascii=False),
+            json.dumps(selected_labels or [], ensure_ascii=False),
+            json.dumps(indicators, ensure_ascii=False),
+            label_category,
+            json.dumps(output_schema, ensure_ascii=False),
+            ts,
+            analysis_id,
+            dynamic_analysis_id,
+        ),
+    )
+    conn.commit()
+    if cursor.rowcount == 0:
+        return None
+    return get_dynamic_analysis(conn, analysis_id, dynamic_analysis_id)
+
+
+def delete_dynamic_analysis(
+    conn: sqlite3.Connection,
+    analysis_id: str,
+    dynamic_analysis_id: str,
+) -> bool:
+    init_db(conn)
+    cursor = conn.execute(
+        """
+        DELETE FROM dynamic_analyses
+        WHERE analysis_id = ? AND dynamic_analysis_id = ?
+        """,
+        (analysis_id, dynamic_analysis_id),
+    )
+    conn.commit()
+    return cursor.rowcount > 0
+
+
 def row_to_prediction(row: sqlite3.Row) -> dict[str, Any]:
     return {
         "prediction_id": row["prediction_id"],
@@ -392,6 +482,9 @@ def row_to_prediction(row: sqlite3.Row) -> dict[str, Any]:
         "input_artifact_path": row["input_artifact_path"],
         "response_json": _json_loads(row["response_json"], {}),
         "response_markdown": row["response_markdown"],
+        "analysis_text": row["analysis_text"],
+        "analysis_note": row["analysis_note"],
+        "summary_text": row["summary_text"],
         "confidence": row["confidence"],
         "error_message": row["error_message"],
         "created_at": row["created_at"],
@@ -442,7 +535,10 @@ def create_or_replace_prediction(
     input_artifact_path: str | None,
     response_json: dict[str, Any],
     response_markdown: str,
-    confidence: str | None,
+    analysis_text: str = "",
+    analysis_note: str = "",
+    summary_text: str = "",
+    confidence: str | None = None,
     error_message: str | None = None,
 ) -> dict[str, Any]:
     init_db(conn)
@@ -461,6 +557,7 @@ def create_or_replace_prediction(
             UPDATE dynamic_annotation_predictions
             SET provider = ?, model = ?, status = ?, input_context_json = ?,
                 input_artifact_path = ?, response_json = ?, response_markdown = ?,
+                analysis_text = ?, analysis_note = ?, summary_text = ?,
                 confidence = ?, error_message = ?, updated_at = ?
             WHERE prediction_id = ?
             """,
@@ -472,6 +569,9 @@ def create_or_replace_prediction(
                 input_artifact_path,
                 json.dumps(response_json, ensure_ascii=False),
                 response_markdown,
+                analysis_text,
+                analysis_note,
+                summary_text,
                 confidence,
                 error_message,
                 ts,
@@ -485,9 +585,10 @@ def create_or_replace_prediction(
             INSERT INTO dynamic_annotation_predictions(
               prediction_id, dynamic_analysis_id, annotation_id, provider, model, status,
               input_context_json, input_artifact_path, response_json, response_markdown,
-              confidence, error_message, created_at, updated_at
+              analysis_text, analysis_note, summary_text, confidence, error_message,
+              created_at, updated_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 prediction_id,
@@ -500,6 +601,9 @@ def create_or_replace_prediction(
                 input_artifact_path,
                 json.dumps(response_json, ensure_ascii=False),
                 response_markdown,
+                analysis_text,
+                analysis_note,
+                summary_text,
                 confidence,
                 error_message,
                 ts,
@@ -519,6 +623,9 @@ def row_to_correction(row: sqlite3.Row) -> dict[str, Any]:
         "prediction_id": row["prediction_id"],
         "corrected_response_json": _json_loads(row["corrected_response_json"], {}),
         "corrected_response_markdown": row["corrected_response_markdown"],
+        "corrected_analysis_text": row["corrected_analysis_text"],
+        "corrected_analysis_note": row["corrected_analysis_note"],
+        "corrected_summary_text": row["corrected_summary_text"],
         "corrected_confidence": row["corrected_confidence"],
         "note": row["note"],
         "validated_for_dataset": bool(row["validated_for_dataset"]),
@@ -545,9 +652,12 @@ def create_prediction_correction(
     prediction_id: str,
     corrected_response_json: dict[str, Any],
     corrected_response_markdown: str,
-    corrected_confidence: str | None,
-    note: str | None,
-    validated_for_dataset: bool,
+    corrected_analysis_text: str = "",
+    corrected_analysis_note: str = "",
+    corrected_summary_text: str = "",
+    corrected_confidence: str | None = None,
+    note: str | None = None,
+    validated_for_dataset: bool = False,
 ) -> dict[str, Any] | None:
     init_db(conn)
     if get_prediction(conn, prediction_id) is None:
@@ -558,15 +668,19 @@ def create_prediction_correction(
         """
         INSERT INTO dynamic_prediction_corrections(
           correction_id, prediction_id, corrected_response_json, corrected_response_markdown,
+          corrected_analysis_text, corrected_analysis_note, corrected_summary_text,
           corrected_confidence, note, validated_for_dataset, created_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             correction_id,
             prediction_id,
             json.dumps(corrected_response_json, ensure_ascii=False),
             corrected_response_markdown,
+            corrected_analysis_text,
+            corrected_analysis_note,
+            corrected_summary_text,
             corrected_confidence,
             note,
             1 if validated_for_dataset else 0,

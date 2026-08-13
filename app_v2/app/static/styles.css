@@ -293,6 +293,43 @@ main {
   font-size: 14px;
 }
 
+.check-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 7px;
+  max-height: 260px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px;
+  background: #fbfcfe;
+}
+
+.check-list label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 7px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: white;
+  color: var(--text);
+  font-size: 12px;
+}
+
+.check-list input {
+  width: auto;
+}
+
+.selection-table .table-wrap {
+  max-height: 260px;
+}
+
+.selection-table input[type="checkbox"] {
+  width: auto;
+}
+
 .grid-2 {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -372,6 +409,16 @@ main {
   line-height: 1.55;
 }
 
+.artifact-preview {
+  display: block;
+  width: 100%;
+  max-height: 420px;
+  object-fit: contain;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #fbfcfe;
+}
+
 .analysis-markdown h2,
 .analysis-markdown h3 {
   margin-top: 0;
@@ -407,12 +454,27 @@ main {
   background: white;
   color: var(--text);
   text-align: left;
+  display: grid;
+  gap: 4px;
 }
 
 .choice-row.active .choice-item {
   border-color: #b9d4ff;
   background: #e8f1ff;
   color: var(--accent-dark);
+}
+
+.choice-main {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+}
+
+.choice-main strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .choice-delete {

@@ -49,6 +49,30 @@ def migrate_db(conn: sqlite3.Connection) -> None:
         "output_schema_json",
         "output_schema_json TEXT NOT NULL DEFAULT '{}'",
     )
+    _add_column_if_missing(conn, "dynamic_analyses", "protocol_name", "protocol_name TEXT NOT NULL DEFAULT ''")
+    _add_column_if_missing(conn, "dynamic_analyses", "description", "description TEXT")
+    _add_column_if_missing(conn, "dynamic_analyses", "selected_labels_json", "selected_labels_json TEXT NOT NULL DEFAULT '[]'")
+    _add_column_if_missing(conn, "dynamic_annotation_predictions", "analysis_text", "analysis_text TEXT NOT NULL DEFAULT ''")
+    _add_column_if_missing(conn, "dynamic_annotation_predictions", "analysis_note", "analysis_note TEXT NOT NULL DEFAULT ''")
+    _add_column_if_missing(conn, "dynamic_annotation_predictions", "summary_text", "summary_text TEXT NOT NULL DEFAULT ''")
+    _add_column_if_missing(
+        conn,
+        "dynamic_prediction_corrections",
+        "corrected_analysis_text",
+        "corrected_analysis_text TEXT NOT NULL DEFAULT ''",
+    )
+    _add_column_if_missing(
+        conn,
+        "dynamic_prediction_corrections",
+        "corrected_analysis_note",
+        "corrected_analysis_note TEXT NOT NULL DEFAULT ''",
+    )
+    _add_column_if_missing(
+        conn,
+        "dynamic_prediction_corrections",
+        "corrected_summary_text",
+        "corrected_summary_text TEXT NOT NULL DEFAULT ''",
+    )
 
 
 def init_db(conn: sqlite3.Connection) -> None:

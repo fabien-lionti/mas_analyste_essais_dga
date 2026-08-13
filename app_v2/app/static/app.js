@@ -44,6 +44,7 @@ const state = {
   dynamicSelectedRunId: "",
   dynamicSelectedAnalysisId: "",
   dynamicSelectedPredictionId: "",
+  dynamicSelectedAnnotationId: "",
 };
 
 let explorationDateFilterTimer = null;
@@ -134,7 +135,16 @@ function canUseChannelWorkflow() {
 }
 
 function canUseSamplingWorkflow() {
-  return Boolean(canUseChannelWorkflow() && state.selectedChannels.size);
+  return Boolean(canUseChannelWorkflow() && state.validatedStructure?.selected_channels?.length);
+}
+
+function workflowStepForCurrentAnalysis() {
+  if (!currentAnalysisId() || !state.files.length) return "sources";
+  if (!state.validatedStructure?.selected_channels?.length) return "channels";
+  const readiness = state.analysis?.readiness || {};
+  const resampledCount = readiness.resampled_json_count ?? state.files.filter(file => file.resampled_json_path).length;
+  if (!resampledCount) return "sampling";
+  return "sampling";
 }
 
 function showWorkflowStep(step) {
@@ -171,7 +181,7 @@ function showAnnotationStep(step) {
 }
 
 function showDynamicAnalysisStep(step) {
-  const target = ["analysis", "prepare", "results"].includes(step) ? step : "analysis";
+  const target = ["analysis", "choice", "generate"].includes(step) ? step : "analysis";
   document.querySelectorAll("[data-dynamic-step]").forEach(button => {
     button.classList.toggle("active", button.dataset.dynamicStep === target);
   });
@@ -209,18 +219,31 @@ function renderAnalyses() {
 
 function analysisSummaryRows() {
   const sampling = state.analysis?.config?.sampling || {};
-  const exportedCount = state.files.filter(file => file.resampled_json_path).length;
+  const readiness = state.analysis?.readiness || {};
+  const exportedCount = readiness.resampled_json_count ?? state.files.filter(file => file.resampled_json_path).length;
   return [
     ["Analyse", state.analysis?.name || "-"],
     ["Type", state.analysis?.kind || "-"],
-    ["Fichiers DXD", state.files.length],
+    ["Statut utilisation", readiness.ready ? "Prête" : "Incomplète"],
+    ["Étapes manquantes", (readiness.missing_steps || []).join(", ") || "-"],
+    ["Fichiers DXD", readiness.file_count ?? state.files.length],
     ["JSON exportés", exportedCount],
-    ["Canaux sélectionnés", state.validatedStructure?.selected_channels?.length || state.selectedChannels.size || 0],
-    ["Canaux récurrents", state.recurrent.length || state.channelStatus?.summary?.recurrent_channel_count || 0],
+    ["Canaux sélectionnés", readiness.selected_channel_count ?? state.validatedStructure?.selected_channels?.length ?? state.selectedChannels.size ?? 0],
+    ["Canaux récurrents", readiness.recurrent_channel_count ?? state.recurrent.length ?? state.channelStatus?.summary?.recurrent_channel_count ?? 0],
     ["Fréquence sampling", sampling.target_frequency_hz ? `${sampling.target_frequency_hz} Hz` : "-"],
     ["Méthode interpolation", sampling.method || "-"],
     ["Dossier JSON", sampling.resampled_json_dir || "-"],
   ];
+}
+
+function analysisReadinessBadge(readiness = {}) {
+  if (readiness.ready) return '<span class="pill ok">Prête</span>';
+  return '<span class="pill warn">Incomplète</span>';
+}
+
+function analysisMissingText(readiness = {}) {
+  const missing = readiness.missing_steps || [];
+  return missing.length ? missing.join(" · ") : "Toutes les étapes sont disponibles";
 }
 
 function renderAnalysisChoice() {
@@ -235,8 +258,12 @@ function renderAnalysisChoice() {
         ${state.analyses.map(item => `
           <div class="choice-row ${item.analysis_id === currentAnalysisId() ? "active" : ""}">
             <button type="button" class="choice-item" data-analysis-id="${escapeHtml(item.analysis_id)}">
-              <span>${escapeHtml(item.name)}</span>
-              <span class="muted">${escapeHtml(item.kind)}</span>
+              <span class="choice-main">
+                <strong>${escapeHtml(item.name)}</strong>
+                ${analysisReadinessBadge(item.readiness)}
+              </span>
+              <span class="muted">${escapeHtml(item.kind)} · ${escapeHtml(item.readiness?.file_count ?? 0)} DXD · ${escapeHtml(item.readiness?.resampled_json_count ?? 0)} JSON</span>
+              <span class="muted">${escapeHtml(analysisMissingText(item.readiness))}</span>
             </button>
             <button type="button" class="danger choice-delete" data-delete-analysis-id="${escapeHtml(item.analysis_id)}">Supprimer</button>
           </div>
@@ -985,14 +1012,17 @@ async function loadDynamicAnalysis() {
 async function saveDynamicPrompt() {
   const analysisId = currentAnalysisId();
   if (!analysisId) throw new Error("Aucune analyse active");
-  const labelCategory = $("dynamicAnalysisLabelCategorySelect")?.value || selectedDynamicLabels().filter(Boolean)[0] || "";
-  if (!labelCategory) throw new Error("Choisis une catégorie de label");
+  const labels = selectedDynamicLabels().filter(Boolean);
+  if (!labels.length) throw new Error("Choisis au moins un label / segment");
   const payload = {
-    name: $("dynamicAnalysisPromptNameInput")?.value.trim() || "Analyse de segments annotés",
+    name: $("dynamicAnalysisNameInput")?.value.trim() || "Analyse dynamique",
+    protocol_name: "",
+    description: $("dynamicAnalysisProtocolDescriptionInput")?.value.trim() || null,
     system_prompt: $("dynamicAnalysisSystemPromptInput")?.value || "",
     selected_channels: selectedDynamicChannels(),
+    selected_labels: labels,
     indicators: [],
-    label_category: labelCategory,
+    label_category: labels[0],
     output_schema: dynamicOutputSchema(),
   };
   const dynamicAnalysis = await api(`/api/analyses/${encodeURIComponent(analysisId)}/dynamic-analysis`, {
@@ -1002,7 +1032,10 @@ async function saveDynamicPrompt() {
   state.dynamicSelectedAnalysisId = dynamicAnalysis.dynamic_analysis_id;
   await loadDynamicAnalysis();
   $("dynamicAnalysisPromptSelect").value = dynamicAnalysis.dynamic_analysis_id;
-  showDynamicAnalysisStep("prepare");
+  renderDynamicChoiceSummary();
+  $("saveDynamicPromptBtn").textContent = "Créer l'analyse dynamique";
+  setDynamicAnalysisStatus("Analyse dynamique créée et ajoutée à la liste existante.", "ok");
+  showDynamicAnalysisStep("choice");
 }
 
 async function buildDynamicContext() {
@@ -1016,31 +1049,44 @@ async function buildDynamicContext() {
   setDynamicAnalysisStatus(`${context.summary.segment_count} segment(s) dans le contexte.`);
 }
 
+async function openDynamicGeneration() {
+  const dynamicAnalysis = selectedDynamicAnalysis();
+  if (!dynamicAnalysis) throw new Error("Aucune analyse dynamique sélectionnée");
+  state.dynamicSelectedAnalysisId = dynamicAnalysis.dynamic_analysis_id;
+  if ($("dynamicAnalysisPromptSelect")) $("dynamicAnalysisPromptSelect").value = dynamicAnalysis.dynamic_analysis_id;
+  await buildDynamicContext();
+  renderDynamicRuns();
+  const firstSegment = state.dynamicContext?.segments?.[0];
+  if (firstSegment) {
+    const prediction = state.dynamicPredictions.find(item => item.annotation_id === firstSegment.annotation_id);
+    selectDynamicRun(prediction?.prediction_id || "", firstSegment.annotation_id);
+  }
+  showDynamicAnalysisStep("generate");
+}
+
 async function runDynamicAnalysis() {
   const analysisId = currentAnalysisId();
   if (!analysisId) throw new Error("Aucune analyse active");
   const dynamicAnalysisId = state.dynamicSelectedAnalysisId || $("dynamicAnalysisPromptSelect")?.value;
-  if (!dynamicAnalysisId) {
-    await saveDynamicPrompt();
-  }
-  const resolvedDynamicAnalysisId = state.dynamicSelectedAnalysisId || $("dynamicAnalysisPromptSelect")?.value;
-  if (!resolvedDynamicAnalysisId) throw new Error("Aucune analyse dynamique configurée");
-  const result = await api(`/api/analyses/${encodeURIComponent(analysisId)}/dynamic-analysis/${encodeURIComponent(resolvedDynamicAnalysisId)}/predictions`, {
+  if (!dynamicAnalysisId) throw new Error("Aucune analyse dynamique sélectionnée");
+  const annotationId = state.dynamicSelectedAnnotationId || state.dynamicContext?.segments?.[0]?.annotation_id;
+  if (!annotationId) throw new Error("Aucune annotation sélectionnée");
+  const result = await api(`/api/analyses/${encodeURIComponent(analysisId)}/dynamic-analysis/${encodeURIComponent(dynamicAnalysisId)}/predictions/${encodeURIComponent(annotationId)}`, {
     method: "POST",
     body: JSON.stringify({
-      user_prompt: $("dynamicAnalysisUserPromptInput")?.value || "",
-      context_before_sec: Number($("dynamicContextBeforeInput")?.value || 0),
-      context_after_sec: Number($("dynamicContextAfterInput")?.value || 0),
-      max_annotations: Number($("dynamicMaxSegmentsInput")?.value || 25),
-      max_points_per_segment: Number($("dynamicMaxPointsInput")?.value || 250),
+      user_prompt: "Analyse le segment courant à partir des canaux et indicateurs fournis.",
+      context_before_sec: 0,
+      context_after_sec: 0,
+      max_annotations: 200,
+      max_points_per_segment: 250,
       provider: "dry_run",
       model: null,
     }),
   });
   await loadDynamicAnalysis();
-  if (result.items?.[0]) selectDynamicRun(result.items[0].prediction_id);
-  setDynamicAnalysisStatus(`${result.items?.length || 0} prédiction(s) sauvegardée(s).`);
-  showDynamicAnalysisStep("results");
+  if (result.item) selectDynamicRun(result.item.prediction_id);
+  setDynamicAnalysisStatus(`Prédiction sauvegardée pour ${annotationId}.`);
+  showDynamicAnalysisStep("generate");
 }
 
 async function deleteDynamicRun(runId) {
@@ -1063,6 +1109,30 @@ async function deleteDynamicRun(runId) {
   await loadDynamicAnalysis();
 }
 
+async function deleteSelectedDynamicAnalysis() {
+  const analysisId = currentAnalysisId();
+  const dynamicAnalysis = selectedDynamicAnalysis();
+  if (!analysisId) throw new Error("Aucune analyse active");
+  if (!dynamicAnalysis) throw new Error("Aucune analyse dynamique sélectionnée");
+  if (!window.confirm(`Supprimer l'analyse dynamique "${dynamicAnalysis.name}" ?`)) {
+    setStatus("Suppression annulée");
+    return;
+  }
+  await api(`/api/analyses/${encodeURIComponent(analysisId)}/dynamic-analysis/${encodeURIComponent(dynamicAnalysis.dynamic_analysis_id)}`, {
+    method: "DELETE",
+  });
+  if (state.dynamicSelectedAnalysisId === dynamicAnalysis.dynamic_analysis_id) {
+    state.dynamicSelectedAnalysisId = "";
+  }
+  state.dynamicSelectedPredictionId = "";
+  state.dynamicSelectedAnnotationId = "";
+  state.dynamicContext = null;
+  await loadDynamicAnalysis();
+  renderDynamicChoiceSummary();
+  setDynamicAnalysisStatus("Analyse dynamique supprimée.", "ok");
+  showDynamicAnalysisStep("choice");
+}
+
 async function saveDynamicAnalysisVersion() {
   const analysisId = currentAnalysisId();
   const predictionId = state.dynamicSelectedPredictionId || state.dynamicSelectedRunId;
@@ -1072,6 +1142,9 @@ async function saveDynamicAnalysisVersion() {
     body: JSON.stringify({
       corrected_response_markdown: $("dynamicAnalysisCorrectionInput")?.value || "",
       corrected_response_json: {},
+      corrected_analysis_text: $("dynamicAnalysisCorrectionInput")?.value || "",
+      corrected_analysis_note: "",
+      corrected_summary_text: "",
       corrected_confidence: $("dynamicAnalysisConfidenceSelect")?.value || null,
       note: $("dynamicAnalysisCorrectionNoteInput")?.value || null,
       validated_for_dataset: $("dynamicAnalysisValidatedInput")?.checked || false,
@@ -1616,58 +1689,88 @@ function renderAnnotationCatalog() {
 }
 
 function selectedDynamicChannels() {
-  return Array.from($("dynamicAnalysisChannelSelect")?.selectedOptions || [])
-    .map(option => option.value);
+  return Array.from(document.querySelectorAll('input[name="dynamic-channel"]:checked'))
+    .map(input => input.value);
 }
 
 function selectedDynamicLabels() {
-  return Array.from($("dynamicAnalysisLabelSelect")?.selectedOptions || [])
-    .map(option => option.value);
+  return Array.from(document.querySelectorAll('input[name="dynamic-label"]:checked'))
+    .map(input => input.value);
 }
 
 function dynamicOutputSchema() {
-  const raw = $("dynamicAnalysisOutputSchemaInput")?.value.trim() || "{}";
-  try {
-    return JSON.parse(raw);
-  } catch (error) {
-    throw new Error("Schéma de sortie attendu invalide: JSON attendu.");
+  return {};
+}
+
+function resetDynamicAnalysisForm() {
+  state.dynamicSelectedAnalysisId = "";
+  state.dynamicSelectedPredictionId = "";
+  state.dynamicSelectedAnnotationId = "";
+  if ($("dynamicAnalysisPromptSelect")) $("dynamicAnalysisPromptSelect").value = "";
+  if ($("dynamicAnalysisNameInput")) $("dynamicAnalysisNameInput").value = "Analyse dynamique";
+  if ($("dynamicAnalysisProtocolDescriptionInput")) {
+    $("dynamicAnalysisProtocolDescriptionInput").value = "Analyse guidée de segments annotés à partir des canaux resamplés sélectionnés.";
   }
+  if ($("dynamicAnalysisSystemPromptInput")) {
+    $("dynamicAnalysisSystemPromptInput").value = "Tu es un expert en dynamique véhicule. Analyse uniquement les signaux, annotations et métadonnées fournis. Cite les segments et canaux utilisés.";
+  }
+  if ($("dynamicAnalysisChannelChecklist")) $("dynamicAnalysisChannelChecklist").innerHTML = "";
+  if ($("dynamicAnalysisLabelChecklist")) $("dynamicAnalysisLabelChecklist").innerHTML = "";
+  renderDynamicChannelOptions();
+  renderDynamicLabelOptions();
+  renderDynamicChoiceSummary();
+  renderDynamicRuns();
+  if ($("saveDynamicPromptBtn")) $("saveDynamicPromptBtn").textContent = "Créer l'analyse dynamique";
+  setDynamicAnalysisStatus("Nouvelle analyse dynamique. Sélectionne les canaux et segments pertinents.");
+  showDynamicAnalysisStep("analysis");
 }
 
 function renderDynamicChannelOptions() {
-  const select = $("dynamicAnalysisChannelSelect");
-  if (!select) return;
+  const container = $("dynamicAnalysisChannelChecklist");
+  if (!container) return;
   const previous = new Set(selectedDynamicChannels());
   const channels = state.explorationChannels.length ? state.explorationChannels : state.annotationChannels;
-  select.innerHTML = channels.length
-    ? channels.map(channel => `<option value="${escapeHtml(channel.value)}">${escapeHtml(channel.label || channel.value)}</option>`).join("")
-    : '<option value="">Aucun canal disponible</option>';
-  Array.from(select.options).forEach((option, index) => {
-    option.selected = previous.has(option.value) || (!previous.size && index < 2);
-  });
+  const rows = channels.map((channel, index) => ({
+    ...channel,
+    checked: previous.has(channel.value) || (!previous.size && index < 2),
+  }));
+  renderTable(
+    "dynamicAnalysisChannelChecklist",
+    [
+      {
+        key: "selected",
+        label: "",
+        render: row => `<input type="checkbox" name="dynamic-channel" value="${escapeHtml(row.value)}" ${row.checked ? "checked" : ""}>`,
+      },
+      { key: "value", label: "Canal" },
+      { key: "label", label: "Nom affiché", render: row => escapeHtml(row.label || row.value) },
+    ],
+    rows,
+    "Aucun canal disponible"
+  );
 }
 
 function renderDynamicLabelOptions() {
-  const select = $("dynamicAnalysisLabelSelect");
-  const categorySelect = $("dynamicAnalysisLabelCategorySelect");
+  const container = $("dynamicAnalysisLabelChecklist");
   const previous = new Set(selectedDynamicLabels());
-  if (select) {
-    select.innerHTML = state.annotationLabels.length
-      ? state.annotationLabels.map(label => `<option value="${escapeHtml(label)}">${escapeHtml(label)}</option>`).join("")
-      : '<option value="">Aucun label disponible</option>';
-    Array.from(select.options).forEach(option => {
-      option.selected = previous.has(option.value) || !previous.size;
-    });
-  }
-  if (categorySelect) {
-    const previousCategory = categorySelect.value;
-    categorySelect.innerHTML = state.annotationLabels.length
-      ? state.annotationLabels.map(label => `<option value="${escapeHtml(label)}">${escapeHtml(label)}</option>`).join("")
-      : '<option value="">Aucun label disponible</option>';
-    categorySelect.value = state.annotationLabels.includes(previousCategory)
-      ? previousCategory
-      : (state.annotationLabels[0] || "");
-  }
+  if (!container) return;
+  const rows = state.annotationLabels.map(label => ({
+    label,
+    checked: previous.has(label) || !previous.size,
+  }));
+  renderTable(
+    "dynamicAnalysisLabelChecklist",
+    [
+      {
+        key: "selected",
+        label: "",
+        render: row => `<input type="checkbox" name="dynamic-label" value="${escapeHtml(row.label)}" ${row.checked ? "checked" : ""}>`,
+      },
+      { key: "label", label: "Label" },
+    ],
+    rows,
+    "Aucun label disponible"
+  );
 }
 
 function renderDynamicPromptOptions() {
@@ -1675,12 +1778,39 @@ function renderDynamicPromptOptions() {
   if (!select) return;
   const previous = select.value;
   select.innerHTML = [
-    '<option value="">Protocole courant non sauvegardé</option>',
+    '<option value="">Nouvelle analyse dynamique</option>',
     ...state.dynamicPrompts.map(prompt => `<option value="${escapeHtml(prompt.dynamic_analysis_id)}">${escapeHtml(prompt.name)} · ${escapeHtml(prompt.label_category)}</option>`),
   ].join("");
   select.value = state.dynamicPrompts.some(prompt => prompt.dynamic_analysis_id === previous)
     ? previous
     : (state.dynamicSelectedAnalysisId || "");
+  renderDynamicChoiceSummary();
+}
+
+function selectedDynamicAnalysis() {
+  return state.dynamicAnalyses.find(item => item.dynamic_analysis_id === state.dynamicSelectedAnalysisId)
+    || state.dynamicAnalyses.find(item => item.dynamic_analysis_id === $("dynamicAnalysisPromptSelect")?.value)
+    || null;
+}
+
+function renderDynamicChoiceSummary() {
+  const node = $("dynamicAnalysisChoiceSummary");
+  if (!node) return;
+  const item = selectedDynamicAnalysis();
+  if (!item) {
+    node.innerHTML = '<div class="muted">Aucune analyse dynamique sélectionnée.</div>';
+    return;
+  }
+  const predictionCount = state.dynamicPredictions.filter(prediction => prediction.dynamic_analysis_id === item.dynamic_analysis_id).length;
+  node.innerHTML = `
+    <div class="summary-grid">
+      <div><div class="label">Nom</div><div class="value">${escapeHtml(item.name || "-")}</div></div>
+      <div><div class="label">Labels</div><div class="value">${escapeHtml((item.selected_labels || [item.label_category]).filter(Boolean).join(", ") || "-")}</div></div>
+      <div><div class="label">Canaux</div><div class="value">${escapeHtml((item.selected_channels || []).join(", ") || "-")}</div></div>
+      <div><div class="label">Prédictions</div><div class="value">${escapeHtml(predictionCount)}</div></div>
+      <div><div class="label">Description</div><div class="value">${escapeHtml(item.description || "-")}</div></div>
+    </div>
+  `;
 }
 
 function dynamicAnalysisPayload() {
@@ -1691,14 +1821,14 @@ function dynamicAnalysisPayload() {
     model: null,
     prompt_id: null,
     system_prompt: $("dynamicAnalysisSystemPromptInput")?.value || "",
-    user_prompt: $("dynamicAnalysisUserPromptInput")?.value || "",
+    user_prompt: "Analyse le segment courant à partir des canaux et indicateurs fournis.",
     channels: selectedDynamicChannels(),
-    labels: [dynamicAnalysis?.label_category || $("dynamicAnalysisLabelCategorySelect")?.value || selectedDynamicLabels().filter(Boolean)[0]].filter(Boolean),
+    labels: dynamicAnalysis?.selected_labels?.length ? dynamicAnalysis.selected_labels : selectedDynamicLabels().filter(Boolean),
     output_schema: dynamicOutputSchema(),
-    context_before_sec: Number($("dynamicContextBeforeInput")?.value || 0),
-    context_after_sec: Number($("dynamicContextAfterInput")?.value || 0),
-    max_segments: Number($("dynamicMaxSegmentsInput")?.value || 25),
-    max_points_per_segment: Number($("dynamicMaxPointsInput")?.value || 250),
+    context_before_sec: 0,
+    context_after_sec: 0,
+    max_segments: 200,
+    max_points_per_segment: 250,
   };
 }
 
@@ -1755,46 +1885,103 @@ function renderDynamicContext(context) {
   $("dynamicContextPreview").textContent = JSON.stringify(context || {}, null, 2);
 }
 
+function artifactUrl(path) {
+  const value = String(path || "");
+  const marker = "app_v2/app/static";
+  const index = value.indexOf(marker);
+  if (index >= 0) return `/static${value.slice(index + marker.length)}`;
+  return "";
+}
+
+function renderDynamicGenerationSegment(segment, prediction) {
+  const summary = $("dynamicGenerationSegmentSummary");
+  if (summary) {
+    const rows = [
+      ["Annotation", segment?.annotation_id || "-"],
+      ["Fichier", segment?.file_name || "-"],
+      ["Label", segment?.label || "-"],
+      ["Début", formatSeconds(segment?.start_time_sec)],
+      ["Fin", formatSeconds(segment?.end_time_sec)],
+      ["Durée", formatSeconds(segment?.duration_sec)],
+    ];
+    summary.innerHTML = rows.map(([label, value]) => `
+      <div>
+        <div class="label">${escapeHtml(label)}</div>
+        <div class="value">${escapeHtml(value)}</div>
+      </div>
+    `).join("");
+  }
+  const image = $("dynamicArtifactPreview");
+  if (image) {
+    const url = artifactUrl(prediction?.input_artifact_path);
+    if (url) {
+      image.src = url;
+      image.classList.remove("hidden");
+    } else {
+      image.removeAttribute("src");
+      image.classList.add("hidden");
+    }
+  }
+}
+
 function renderDynamicRuns() {
+  const predictionsByAnnotation = new Map(state.dynamicPredictions.map(item => [item.annotation_id, item]));
+  const rows = state.dynamicContext?.segments?.length
+    ? state.dynamicContext.segments.map(segment => ({
+      ...(predictionsByAnnotation.get(segment.annotation_id) || {}),
+      annotation_id: segment.annotation_id,
+      prediction_id: predictionsByAnnotation.get(segment.annotation_id)?.prediction_id || "",
+      status: predictionsByAnnotation.get(segment.annotation_id)?.status || "à générer",
+      input_context: predictionsByAnnotation.get(segment.annotation_id)?.input_context || { segment },
+      summary_text: predictionsByAnnotation.get(segment.annotation_id)?.summary_text || "",
+      created_at: predictionsByAnnotation.get(segment.annotation_id)?.created_at || "",
+    }))
+    : state.dynamicRuns;
   renderTable(
     "dynamicAnalysisRunsTable",
     [
       {
         key: "name",
         label: "Annotation",
-        render: row => `<button type="button" class="link-button dynamic-run-open" data-run-id="${escapeHtml(row.prediction_id)}">${escapeHtml(row.annotation_id)}</button>`,
+        render: row => `<button type="button" class="link-button dynamic-run-open" data-run-id="${escapeHtml(row.prediction_id || "")}" data-annotation-id="${escapeHtml(row.annotation_id)}">${escapeHtml(row.annotation_id)}</button>`,
       },
       { key: "created_at", label: "Date" },
       { key: "status", label: "Statut", render: row => `<span class="pill">${escapeHtml(row.status)}</span>` },
       { key: "input_context", label: "Fichier", render: row => escapeHtml(row.input_context?.segment?.file_name || "-") },
-      { key: "confidence", label: "Confiance", render: row => escapeHtml(row.confidence || "-") },
+      { key: "summary_text", label: "Synthèse", render: row => escapeHtml(row.summary_text || "-") },
     ],
-    state.dynamicRuns,
-    "Aucune prédiction"
+    rows,
+    "Aucune annotation"
   );
   document.querySelectorAll(".dynamic-run-open").forEach(button => {
-    button.addEventListener("click", () => selectDynamicRun(button.dataset.runId));
+    button.addEventListener("click", () => selectDynamicRun(button.dataset.runId, button.dataset.annotationId));
   });
 }
 
-function selectDynamicRun(runId) {
+function selectDynamicRun(runId, annotationId = "") {
   const run = state.dynamicRuns.find(item => item.prediction_id === runId || item.run_id === runId);
-  if (!run) return;
-  state.dynamicSelectedRunId = runId;
-  state.dynamicSelectedPredictionId = run.prediction_id || "";
+  const segment = state.dynamicContext?.segments?.find(item => item.annotation_id === annotationId)
+    || run?.input_context?.segment;
+  state.dynamicSelectedAnnotationId = annotationId || run?.annotation_id || segment?.annotation_id || "";
+  if (!run && !segment) return;
+  state.dynamicSelectedRunId = runId || "";
+  state.dynamicSelectedPredictionId = run?.prediction_id || "";
   renderDynamicContext(run.context || {
     summary: {
       segment_count: 1,
       file_count: 1,
       skipped_segment_count: 0,
-      channels: Object.keys(run.input_context?.segment?.signal_context?.channels || {}),
-      labels: [run.response_json?.label_category].filter(Boolean),
+      channels: Object.keys(segment?.signal_context?.channels || {}),
+      labels: [segment?.label].filter(Boolean),
     },
-    segments: run.input_context?.segment ? [run.input_context.segment] : [],
+    segments: segment ? [segment] : [],
   });
-  $("dynamicAnalysisResult").innerHTML = renderMarkdownLite(run.response_markdown);
-  $("dynamicAnalysisCorrectionInput").value = run.response_markdown || "";
-  $("saveDynamicAnalysisVersionBtn").disabled = false;
+  renderDynamicGenerationSegment(segment, run);
+  $("dynamicAnalysisResult").innerHTML = run
+    ? renderMarkdownLite(run.response_markdown)
+    : '<div class="muted">Aucune prédiction générée pour cette annotation.</div>';
+  $("dynamicAnalysisCorrectionInput").value = run?.response_markdown || "";
+  $("saveDynamicAnalysisVersionBtn").disabled = !run;
   renderDynamicRuns();
 }
 
@@ -2217,10 +2404,45 @@ async function loadAnalysis(analysisId = currentAnalysisId()) {
     return;
   }
   state.analysis = await api(`/api/analyses/${encodeURIComponent(analysisId)}`);
+  state.files = [];
+  state.events = [];
+  state.channelStatus = null;
+  state.recurrent = [];
+  state.anomalyFiles = [];
+  state.anomalies = [];
+  state.selectedChannels = new Set();
+  state.validatedStructure = null;
+  state.explorationFiles = [];
+  state.explorationChannels = [];
+  state.explorationFileId = "";
+  state.parametricFiles = [];
+  state.parametricChannels = [];
+  state.parametricFileId = "";
+  state.annotationFiles = [];
+  state.annotationChannels = [];
+  state.annotationFileId = "";
+  state.annotations = [];
+  state.annotationLabels = [];
+  state.annotationManagedLabels = [];
+  state.annotationEditingId = "";
+  state.annotationCatalog = [];
+  state.annotationLabelSummary = [];
+  state.dynamicPrompts = [];
+  state.dynamicRuns = [];
+  state.dynamicAnalyses = [];
+  state.dynamicPredictions = [];
+  state.dynamicContext = null;
+  state.dynamicSelectedRunId = "";
+  state.dynamicSelectedAnalysisId = "";
+  state.dynamicSelectedPredictionId = "";
+  state.dynamicSelectedAnnotationId = "";
+  state.workflowStep = "sources";
+  renderAll();
   state.selectedChannels = new Set();
   state.anomalies = [];
   state.annotationEditingId = "";
   await Promise.all([loadFiles(), loadEvents(), loadChannels()]);
+  state.workflowStep = workflowStepForCurrentAnalysis();
   renderAll();
   await loadExplorationDateRange();
   await loadExplorationFiles();
@@ -2290,19 +2512,30 @@ async function createAnalysis() {
     }),
   });
   state.analysis = payload;
-  if (sourceDxdDir && $("discoverOnCreateInput").checked) {
-    await api(`/api/analyses/${encodeURIComponent(payload.analysis_id)}/files/discover-dxd`, {
-      method: "POST",
-      body: JSON.stringify({
-        dxd_dir: sourceDxdDir,
-        recursive: $("recursiveInput").checked,
-      }),
-    });
-  }
   await loadAnalyses();
   await loadAnalysis(payload.analysis_id);
+  if (sourceDxdDir && $("discoverOnCreateInput").checked) {
+    try {
+      await api(`/api/analyses/${encodeURIComponent(payload.analysis_id)}/files/discover-dxd`, {
+        method: "POST",
+        body: JSON.stringify({
+          dxd_dir: sourceDxdDir,
+          recursive: $("recursiveInput").checked,
+        }),
+      });
+      await loadAnalyses();
+      await loadAnalysis(payload.analysis_id);
+    } catch (error) {
+      await loadAnalyses();
+      await loadAnalysis(payload.analysis_id);
+      showWorkflowStep("sources");
+      throw new Error(`Analyse créée, rattachement DXD à compléter: ${error.message || String(error)}`);
+    }
+  }
   if (state.files.length) {
     showWorkflowStep("channels");
+  } else {
+    showWorkflowStep("sources");
   }
 }
 
@@ -2697,21 +2930,35 @@ function bindActions() {
   $("deleteAnnotationLabelBtn")?.addEventListener("click", wrapAction(deleteSelectedAnnotationLabel, "Label supprimé"));
   $("dynamicAnalysisPromptSelect")?.addEventListener("change", () => {
     const prompt = state.dynamicPrompts.find(item => item.dynamic_analysis_id === $("dynamicAnalysisPromptSelect").value);
-    if (!prompt) return;
+    if (!prompt) {
+      resetDynamicAnalysisForm();
+      return;
+    }
     state.dynamicSelectedAnalysisId = prompt.dynamic_analysis_id;
-    $("dynamicAnalysisPromptNameInput").value = prompt.name || "";
-    $("dynamicAnalysisProtocolDescriptionInput").value = `Catégorie: ${prompt.label_category || "-"}`;
+    $("dynamicAnalysisNameInput").value = prompt.name || "";
+    $("dynamicAnalysisProtocolDescriptionInput").value = prompt.description || "";
     $("dynamicAnalysisSystemPromptInput").value = prompt.system_prompt || "";
-    if ($("dynamicAnalysisLabelCategorySelect")) $("dynamicAnalysisLabelCategorySelect").value = prompt.label_category || "";
-    $("dynamicAnalysisOutputSchemaInput").value = JSON.stringify(prompt.output_schema || {}, null, 2);
     renderDynamicChannelOptions();
-    Array.from($("dynamicAnalysisChannelSelect")?.options || []).forEach(option => {
-      option.selected = (prompt.selected_channels || []).includes(option.value);
+    document.querySelectorAll('input[name="dynamic-channel"]').forEach(input => {
+      input.checked = (prompt.selected_channels || []).includes(input.value);
     });
-    wrapAction(loadDynamicAnalysis, "Analyse dynamique chargée")();
+    renderDynamicLabelOptions();
+    document.querySelectorAll('input[name="dynamic-label"]').forEach(input => {
+      input.checked = (prompt.selected_labels || [prompt.label_category]).filter(Boolean).includes(input.value);
+    });
+    $("saveDynamicPromptBtn").textContent = "Créer l'analyse dynamique";
+    wrapAction(async () => {
+      const analysisId = currentAnalysisId();
+      const predictions = await api(`/api/analyses/${encodeURIComponent(analysisId)}/dynamic-analysis/${encodeURIComponent(prompt.dynamic_analysis_id)}/predictions`);
+      state.dynamicPredictions = predictions.items || [];
+      state.dynamicRuns = state.dynamicPredictions;
+      renderDynamicChoiceSummary();
+      renderDynamicRuns();
+    }, "Analyse dynamique chargée")();
   });
-  $("saveDynamicPromptBtn")?.addEventListener("click", wrapAction(saveDynamicPrompt, "Protocole sauvegardé"));
-  $("buildDynamicContextBtn")?.addEventListener("click", wrapAction(buildDynamicContext, "Contexte construit"));
+  $("saveDynamicPromptBtn")?.addEventListener("click", wrapAction(saveDynamicPrompt, "Analyse dynamique sauvegardée"));
+  $("openDynamicGenerationBtn")?.addEventListener("click", wrapAction(openDynamicGeneration, "Génération ouverte"));
+  $("deleteDynamicAnalysisBtn")?.addEventListener("click", wrapAction(deleteSelectedDynamicAnalysis, "Analyse dynamique supprimée"));
   $("runDynamicAnalysisBtn")?.addEventListener("click", wrapAction(runDynamicAnalysis, "Analyse dynamique lancée"));
   $("saveDynamicAnalysisVersionBtn")?.addEventListener("click", wrapAction(saveDynamicAnalysisVersion, "Correction sauvegardée"));
   $("saveAnnotationBtn")?.addEventListener("click", wrapAction(saveAnnotation, "Annotation sauvegardée"));

@@ -83,6 +83,31 @@ def test_discover_dxd_files_is_analysis_scoped_and_idempotent(tmp_path: Path):
         assert events[0]["payload"]["discovered_files"] == 2
 
 
+def test_same_dxd_files_can_be_attached_to_multiple_analyses(tmp_path: Path):
+    db_path = tmp_path / "test.sqlite"
+    dxd_dir = tmp_path / "dxd"
+    dxd_dir.mkdir()
+    (dxd_dir / "run_001.dxd").write_bytes(b"one")
+
+    with connect(db_path) as conn:
+        init_db(conn)
+        first_analysis = create_analysis(conn, name="Test 1", source_dxd_dir=str(dxd_dir))
+        second_analysis = create_analysis(conn, name="Test 2", source_dxd_dir=str(dxd_dir))
+
+        first = discover_dxd_files(conn, analysis_id=first_analysis["analysis_id"], dxd_dir=dxd_dir)
+        second = discover_dxd_files(conn, analysis_id=second_analysis["analysis_id"], dxd_dir=dxd_dir)
+        conn.commit()
+
+        first_files = list_analysis_files(conn, first_analysis["analysis_id"])
+        second_files = list_analysis_files(conn, second_analysis["analysis_id"])
+        assert first["inserted_files"] == 1
+        assert second["inserted_files"] == 1
+        assert len(first_files) == 1
+        assert len(second_files) == 1
+        assert first_files[0]["source_dxd_path"] == second_files[0]["source_dxd_path"]
+        assert first_files[0]["file_id"] != second_files[0]["file_id"]
+
+
 def test_recursive_discovery(tmp_path: Path):
     db_path = tmp_path / "test.sqlite"
     dxd_dir = tmp_path / "dxd"

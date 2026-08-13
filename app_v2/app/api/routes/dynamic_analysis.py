@@ -1,7 +1,14 @@
 from __future__ import annotations
 
+import base64
 import json
+import mimetypes
+import os
+import re
 import statistics
+import urllib.error
+import urllib.request
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -18,8 +25,10 @@ from app_v2.app.db.repositories.dynamic_analysis import (
     create_prompt,
     create_run,
     create_run_version,
+    delete_dynamic_analysis,
     delete_run,
     get_dynamic_analysis,
+    get_dynamic_analysis_by_name,
     get_prompt,
     get_prediction,
     get_run,
@@ -29,6 +38,7 @@ from app_v2.app.db.repositories.dynamic_analysis import (
     list_prompts,
     list_run_versions,
     list_runs,
+    update_dynamic_analysis,
 )
 from app_v2.app.db.repositories.files import get_analysis_file, list_analysis_files
 from app_v2.app.dependencies import get_db
@@ -73,10 +83,13 @@ class DynamicRunVersionRequest(BaseModel):
 
 class DynamicAnalysisDefinitionRequest(BaseModel):
     name: str = Field(min_length=1, max_length=160)
+    protocol_name: str = Field(default="", max_length=160)
+    description: Optional[str] = None
     system_prompt: str = Field(min_length=1)
     selected_channels: List[str] = Field(default_factory=list)
+    selected_labels: List[str] = Field(default_factory=list)
     indicators: List[Dict[str, Any]] = Field(default_factory=list)
-    label_category: str = Field(min_length=1, max_length=160)
+    label_category: str = Field(default="", max_length=160)
     output_schema: Dict[str, Any] = Field(default_factory=dict)
 
 
@@ -93,6 +106,9 @@ class DynamicPredictionRequest(BaseModel):
 class DynamicPredictionCorrectionRequest(BaseModel):
     corrected_response_markdown: str = Field(min_length=1)
     corrected_response_json: Dict[str, Any] = Field(default_factory=dict)
+    corrected_analysis_text: str = ""
+    corrected_analysis_note: str = ""
+    corrected_summary_text: str = ""
     corrected_confidence: Optional[str] = None
     note: Optional[str] = None
     validated_for_dataset: bool = False
@@ -385,6 +401,254 @@ def prediction_markdown(response: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def _extract_tag(text: str, tag: str) -> str:
+    match = re.search(rf"<{tag}>(.*?)</{tag}>", text or "", flags=re.DOTALL | re.IGNORECASE)
+    return match.group(1).strip() if match else ""
+
+
+def parse_tagged_prediction(text: str) -> dict[str, str]:
+    analysis_text = _extract_tag(text, "analyse")
+    analysis_note = _extract_tag(text, "note_analyse")
+    summary_text = _extract_tag(text, "synthese")
+    if not analysis_text and not summary_text:
+        analysis_text = (text or "").strip()
+    if not summary_text:
+        summary_text = analysis_text.splitlines()[0][:240] if analysis_text else ""
+    return {
+        "analysis_text": analysis_text,
+        "analysis_note": analysis_note,
+        "summary_text": summary_text,
+    }
+
+
+def tagged_prediction_markdown(parts: dict[str, str]) -> str:
+    return "\n".join(
+        [
+            "## Synthèse",
+            parts.get("summary_text") or "-",
+            "",
+            "## Analyse",
+            parts.get("analysis_text") or "-",
+            "",
+            "## Note d'analyse",
+            parts.get("analysis_note") or "-",
+        ]
+    )
+
+
+def dynamic_artifact_dir(analysis_id: str, dynamic_analysis_id: str) -> Path:
+    root = Path("app_v2/app/static/generated/dynamic_analysis_artifacts")
+    path = root / analysis_id / dynamic_analysis_id
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def generate_segment_artifact(
+    *,
+    analysis_id: str,
+    dynamic_analysis_id: str,
+    segment: dict[str, Any],
+) -> str:
+    artifact_dir = dynamic_artifact_dir(analysis_id, dynamic_analysis_id)
+    output_path = artifact_dir / f"{segment['annotation_id']}.png"
+    signal_context = segment.get("signal_context") or {}
+    time_values = signal_context.get("time") or []
+    channels = signal_context.get("channels") or {}
+    try:
+        import matplotlib
+
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+
+        fig, ax = plt.subplots(figsize=(10, 5), dpi=130)
+        for channel, payload in channels.items():
+            ax.plot(time_values, payload.get("values") or [], label=channel, linewidth=1.2)
+        ax.axvspan(float(segment["start_time_sec"]), float(segment["end_time_sec"]), color="#f59e0b", alpha=0.18)
+        ax.set_title(f"{segment.get('label') or ''} - {segment.get('file_name') or segment['annotation_id']}")
+        ax.set_xlabel("Temps (s)")
+        ax.grid(True, alpha=0.25)
+        if channels:
+            ax.legend(loc="best", fontsize=8)
+        fig.tight_layout()
+        fig.savefig(output_path)
+        plt.close(fig)
+    except Exception:
+        svg_path = artifact_dir / f"{segment['annotation_id']}.svg"
+        svg_path.write_text(
+            "\n".join(
+                [
+                    '<svg xmlns="http://www.w3.org/2000/svg" width="900" height="420">',
+                    '<rect width="100%" height="100%" fill="#ffffff"/>',
+                    '<text x="24" y="40" font-family="Arial" font-size="18" fill="#17202c">Artefact analyse dynamique</text>',
+                    f'<text x="24" y="72" font-family="Arial" font-size="13" fill="#657386">Annotation: {segment["annotation_id"]}</text>',
+                    f'<text x="24" y="96" font-family="Arial" font-size="13" fill="#657386">Fichier: {segment.get("file_name") or "-"}</text>',
+                    f'<text x="24" y="120" font-family="Arial" font-size="13" fill="#657386">Segment: {segment.get("start_time_sec")} - {segment.get("end_time_sec")} s</text>',
+                    "</svg>",
+                ]
+            ),
+            encoding="utf-8",
+        )
+        return str(svg_path)
+    return str(output_path)
+
+
+def image_inline_data(path: str | Path) -> tuple[str, str]:
+    file_path = Path(path)
+    mime_type = mimetypes.guess_type(str(file_path))[0] or "image/png"
+    if not mime_type.startswith("image/"):
+        mime_type = "image/png"
+    return mime_type, base64.b64encode(file_path.read_bytes()).decode("ascii")
+
+
+def call_gemini_multimodal(*, artifact_path: str, prompt: str, model: str | None = None) -> dict[str, Any]:
+    api_key = os.environ.get("GEMINI_API_KEY")
+    if not api_key:
+        raise HTTPException(status_code=503, detail="GEMINI_API_KEY is not configured")
+    resolved_model = model or os.environ.get("GEMINI_DYNAMIC_ANALYSIS_MODEL") or "gemini-3-flash-preview"
+    mime_type, image_b64 = image_inline_data(artifact_path)
+    body = {
+        "contents": [
+            {
+                "role": "user",
+                "parts": [
+                    {"inline_data": {"mime_type": mime_type, "data": image_b64}},
+                    {"text": prompt},
+                ],
+            }
+        ],
+        "generationConfig": {
+            "temperature": 0.1,
+        },
+    }
+    request = urllib.request.Request(
+        f"https://generativelanguage.googleapis.com/v1beta/models/{resolved_model}:generateContent",
+        data=json.dumps(body).encode("utf-8"),
+        headers={
+            "x-goog-api-key": api_key,
+            "Content-Type": "application/json",
+            "User-Agent": "mas-analyste-essais-dga/0.1",
+            "Accept": "application/json",
+        },
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=90) as response:
+            response_data = json.loads(response.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", errors="replace")
+        raise HTTPException(status_code=502, detail=f"Gemini API HTTP {exc.code}: {detail}") from exc
+    except urllib.error.URLError as exc:
+        raise HTTPException(status_code=502, detail=f"Gemini API request failed: {exc.reason}") from exc
+    try:
+        candidate = response_data["candidates"][0]
+        text = "".join(str(part.get("text") or "") for part in candidate["content"]["parts"])
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Malformed Gemini response: {exc}") from exc
+    return {"text": text, "model": resolved_model, "raw_response": response_data}
+
+
+def dynamic_llm_prompt(dynamic_analysis: dict[str, Any], segment: dict[str, Any], user_prompt: str) -> str:
+    context = {
+        "dynamic_analysis": {
+            "name": dynamic_analysis.get("name"),
+            "selected_labels": dynamic_analysis.get("selected_labels") or [dynamic_analysis.get("label_category")],
+            "selected_channels": dynamic_analysis.get("selected_channels") or [],
+            "indicators": dynamic_analysis.get("indicators") or [],
+        },
+        "segment": {
+            "annotation_id": segment.get("annotation_id"),
+            "file_name": segment.get("file_name"),
+            "label": segment.get("label"),
+            "start_time_sec": segment.get("start_time_sec"),
+            "end_time_sec": segment.get("end_time_sec"),
+            "duration_sec": segment.get("duration_sec"),
+        },
+        "channel_metrics": {
+            name: payload.get("metrics") or {}
+            for name, payload in (segment.get("signal_context", {}).get("channels") or {}).items()
+        },
+    }
+    return "\n\n".join(
+        [
+            dynamic_analysis.get("system_prompt") or "",
+            user_prompt,
+            "Contexte structure fourni par l'application:",
+            json.dumps(context, ensure_ascii=False, indent=2),
+            "Réponds uniquement avec ces balises:",
+            "<analyse>...</analyse>",
+            "<note_analyse>...</note_analyse>",
+            "<synthese>...</synthese>",
+        ]
+    )
+
+
+def create_prediction_for_segment(
+    conn: Connection,
+    *,
+    analysis_id: str,
+    dynamic_analysis: dict[str, Any],
+    segment: dict[str, Any],
+    payload: DynamicPredictionRequest,
+    context: dict[str, Any],
+) -> dict[str, Any]:
+    artifact_path = generate_segment_artifact(
+        analysis_id=analysis_id,
+        dynamic_analysis_id=dynamic_analysis["dynamic_analysis_id"],
+        segment=segment,
+    )
+    if payload.provider == "gemini":
+        gemini = call_gemini_multimodal(
+            artifact_path=artifact_path,
+            prompt=dynamic_llm_prompt(dynamic_analysis, segment, payload.user_prompt),
+            model=payload.model,
+        )
+        parts = parse_tagged_prediction(gemini["text"])
+        model = gemini["model"]
+        status = "finished"
+    else:
+        analysis_lines = [
+            "Dry-run: le provider LLM multimodal n'est pas appele.",
+            f"Annotation {segment.get('annotation_id')} sur {segment.get('file_name')}.",
+        ]
+        for channel, channel_context in (segment.get("signal_context", {}).get("channels") or {}).items():
+            metrics = channel_context.get("metrics") or {}
+            analysis_lines.append(
+                f"{channel}: pic absolu {metrics.get('peak_abs')}, delta {metrics.get('delta')}."
+            )
+        parts = {
+            "analysis_text": "\n".join(analysis_lines),
+            "analysis_note": "Artefact visuel genere et contexte segment sauvegarde.",
+            "summary_text": "Dry-run: contexte pret pour prediction LLM multimodale.",
+        }
+        model = payload.model
+        status = "dry_run"
+    response_json = {
+        "analyse": parts["analysis_text"],
+        "note_analyse": parts["analysis_note"],
+        "synthese": parts["summary_text"],
+    }
+    return create_or_replace_prediction(
+        conn,
+        dynamic_analysis_id=dynamic_analysis["dynamic_analysis_id"],
+        annotation_id=segment["annotation_id"],
+        provider=payload.provider,
+        model=model,
+        status=status,
+        input_context={
+            "analysis": context["analysis"],
+            "request": context["request"],
+            "segment": segment,
+        },
+        input_artifact_path=artifact_path,
+        response_json=response_json,
+        response_markdown=tagged_prediction_markdown(parts),
+        analysis_text=parts["analysis_text"],
+        analysis_note=parts["analysis_note"],
+        summary_text=parts["summary_text"],
+        confidence=None,
+    )
+
+
 @router.get("/prompts")
 def list_prompts_endpoint(analysis_id: str, conn: Connection = Depends(get_db)):
     require_analysis(conn, analysis_id)
@@ -423,18 +687,93 @@ def create_dynamic_analysis_endpoint(
     conn: Connection = Depends(get_db),
 ):
     require_analysis(conn, analysis_id)
+    name = payload.name.strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="Dynamic analysis name is required")
     if not payload.selected_channels:
         raise HTTPException(status_code=400, detail="At least one channel is required")
+    selected_labels = [label for label in payload.selected_labels if label]
+    label_category = payload.label_category.strip() or (selected_labels[0] if selected_labels else "")
+    if not selected_labels and label_category:
+        selected_labels = [label_category]
+    if not selected_labels:
+        raise HTTPException(status_code=400, detail="At least one segment label is required")
+    existing = get_dynamic_analysis_by_name(conn, analysis_id, name)
+    if existing is not None:
+        return update_dynamic_analysis(
+            conn,
+            analysis_id=analysis_id,
+            dynamic_analysis_id=existing["dynamic_analysis_id"],
+            name=name,
+            protocol_name=payload.protocol_name.strip(),
+            description=(payload.description or "").strip() or None,
+            system_prompt=payload.system_prompt,
+            selected_channels=payload.selected_channels,
+            selected_labels=selected_labels,
+            indicators=payload.indicators,
+            label_category=label_category,
+            output_schema=payload.output_schema,
+        )
     return create_dynamic_analysis(
         conn,
         analysis_id=analysis_id,
-        name=payload.name.strip(),
+        name=name,
+        protocol_name=payload.protocol_name.strip(),
+        description=(payload.description or "").strip() or None,
         system_prompt=payload.system_prompt,
         selected_channels=payload.selected_channels,
+        selected_labels=selected_labels,
         indicators=payload.indicators,
-        label_category=payload.label_category.strip(),
+        label_category=label_category,
         output_schema=payload.output_schema,
     )
+
+
+@router.patch("/{dynamic_analysis_id}")
+def update_dynamic_analysis_endpoint(
+    analysis_id: str,
+    dynamic_analysis_id: str,
+    payload: DynamicAnalysisDefinitionRequest,
+    conn: Connection = Depends(get_db),
+):
+    require_analysis(conn, analysis_id)
+    if not payload.selected_channels:
+        raise HTTPException(status_code=400, detail="At least one channel is required")
+    selected_labels = [label for label in payload.selected_labels if label]
+    label_category = payload.label_category.strip() or (selected_labels[0] if selected_labels else "")
+    if not selected_labels and label_category:
+        selected_labels = [label_category]
+    if not selected_labels:
+        raise HTTPException(status_code=400, detail="At least one segment label is required")
+    updated = update_dynamic_analysis(
+        conn,
+        analysis_id=analysis_id,
+        dynamic_analysis_id=dynamic_analysis_id,
+        name=payload.name.strip(),
+        protocol_name=payload.protocol_name.strip(),
+        description=(payload.description or "").strip() or None,
+        system_prompt=payload.system_prompt,
+        selected_channels=payload.selected_channels,
+        selected_labels=selected_labels,
+        indicators=payload.indicators,
+        label_category=label_category,
+        output_schema=payload.output_schema,
+    )
+    if updated is None:
+        raise HTTPException(status_code=404, detail="Dynamic analysis not found")
+    return updated
+
+
+@router.delete("/{dynamic_analysis_id}")
+def delete_dynamic_analysis_endpoint(
+    analysis_id: str,
+    dynamic_analysis_id: str,
+    conn: Connection = Depends(get_db),
+):
+    require_analysis(conn, analysis_id)
+    if not delete_dynamic_analysis(conn, analysis_id, dynamic_analysis_id):
+        raise HTTPException(status_code=404, detail="Dynamic analysis not found")
+    return {"status": "ok", "deleted": dynamic_analysis_id}
 
 
 @router.get("/{dynamic_analysis_id}/predictions")
@@ -465,7 +804,7 @@ def create_dynamic_predictions_endpoint(
         system_prompt=dynamic_analysis["system_prompt"],
         user_prompt=payload.user_prompt,
         channels=dynamic_analysis["selected_channels"],
-        labels=[dynamic_analysis["label_category"]],
+        labels=dynamic_analysis.get("selected_labels") or [dynamic_analysis["label_category"]],
         output_schema=dynamic_analysis["output_schema"],
         context_before_sec=payload.context_before_sec,
         context_after_sec=payload.context_after_sec,
@@ -475,24 +814,14 @@ def create_dynamic_predictions_endpoint(
     context = build_dynamic_context(conn, analysis_id, context_payload)
     predictions = []
     for segment in context.get("segments", []):
-        response = prediction_response_for_segment(dynamic_analysis, segment, payload.user_prompt)
         predictions.append(
-            create_or_replace_prediction(
+            create_prediction_for_segment(
                 conn,
-                dynamic_analysis_id=dynamic_analysis_id,
-                annotation_id=segment["annotation_id"],
-                provider=payload.provider,
-                model=payload.model,
-                status="dry_run",
-                input_context={
-                    "analysis": context["analysis"],
-                    "request": context["request"],
-                    "segment": segment,
-                },
-                input_artifact_path=None,
-                response_json=response,
-                response_markdown=prediction_markdown(response),
-                confidence=response.get("niveau_confiance"),
+                analysis_id=analysis_id,
+                dynamic_analysis=dynamic_analysis,
+                segment=segment,
+                payload=payload,
+                context=context,
             )
         )
     return {
@@ -501,6 +830,47 @@ def create_dynamic_predictions_endpoint(
         "items": predictions,
         "skipped_segments": context.get("skipped_segments", []),
     }
+
+
+@router.post("/{dynamic_analysis_id}/predictions/{annotation_id}")
+def create_dynamic_prediction_for_annotation_endpoint(
+    analysis_id: str,
+    dynamic_analysis_id: str,
+    annotation_id: str,
+    payload: DynamicPredictionRequest,
+    conn: Connection = Depends(get_db),
+):
+    dynamic_analysis = get_dynamic_analysis(conn, analysis_id, dynamic_analysis_id)
+    if dynamic_analysis is None:
+        raise HTTPException(status_code=404, detail="Dynamic analysis not found")
+    context_payload = DynamicContextRequest(
+        name=dynamic_analysis["name"],
+        provider=payload.provider,
+        model=payload.model,
+        system_prompt=dynamic_analysis["system_prompt"],
+        user_prompt=payload.user_prompt,
+        channels=dynamic_analysis["selected_channels"],
+        labels=dynamic_analysis.get("selected_labels") or [dynamic_analysis["label_category"]],
+        file_ids=[],
+        output_schema=dynamic_analysis["output_schema"],
+        context_before_sec=payload.context_before_sec,
+        context_after_sec=payload.context_after_sec,
+        max_segments=payload.max_annotations,
+        max_points_per_segment=payload.max_points_per_segment,
+    )
+    context = build_dynamic_context(conn, analysis_id, context_payload)
+    segment = next((item for item in context.get("segments", []) if item.get("annotation_id") == annotation_id), None)
+    if segment is None:
+        raise HTTPException(status_code=404, detail="Annotation not found in dynamic analysis scope")
+    prediction = create_prediction_for_segment(
+        conn,
+        analysis_id=analysis_id,
+        dynamic_analysis=dynamic_analysis,
+        segment=segment,
+        payload=payload,
+        context=context,
+    )
+    return {"dynamic_analysis": dynamic_analysis, "item": prediction}
 
 
 @router.get("/predictions/{prediction_id}/corrections")
@@ -529,6 +899,9 @@ def create_dynamic_prediction_correction_endpoint(
         prediction_id=prediction_id,
         corrected_response_json=payload.corrected_response_json,
         corrected_response_markdown=payload.corrected_response_markdown,
+        corrected_analysis_text=payload.corrected_analysis_text,
+        corrected_analysis_note=payload.corrected_analysis_note,
+        corrected_summary_text=payload.corrected_summary_text,
         corrected_confidence=payload.corrected_confidence,
         note=payload.note,
         validated_for_dataset=payload.validated_for_dataset,

@@ -49,6 +49,7 @@ from app_v2.app.api.routes.dynamic_analysis import (
     create_prompt_endpoint,
     create_run_endpoint,
     create_run_version_endpoint,
+    delete_dynamic_analysis_endpoint,
     list_dynamic_predictions_endpoint,
     list_dynamic_analyses_endpoint,
     list_runs_endpoint,
@@ -482,6 +483,22 @@ def test_dynamic_analysis_definition_prediction_and_correction(tmp_path: Path):
         assert dynamic_analysis["analysis_id"] == analysis_id
         assert dynamic_analysis["label_category"] == "freinage"
         assert list_dynamic_analyses_endpoint(analysis_id, conn)["items"][0]["dynamic_analysis_id"] == dynamic_analysis["dynamic_analysis_id"]
+        overwritten_dynamic_analysis = create_dynamic_analysis_endpoint(
+            analysis_id,
+            DynamicAnalysisDefinitionRequest(
+                name=" Analyse freinage ",
+                system_prompt="Expert dynamique mis a jour.",
+                selected_channels=["vehicle.ay"],
+                selected_labels=["freinage"],
+            ),
+            conn,
+        )
+        listed_dynamic_analyses = list_dynamic_analyses_endpoint(analysis_id, conn)["items"]
+        assert overwritten_dynamic_analysis["dynamic_analysis_id"] == dynamic_analysis["dynamic_analysis_id"]
+        assert overwritten_dynamic_analysis["name"] == "Analyse freinage"
+        assert overwritten_dynamic_analysis["system_prompt"] == "Expert dynamique mis a jour."
+        assert overwritten_dynamic_analysis["selected_channels"] == ["vehicle.ay"]
+        assert [item["name"] for item in listed_dynamic_analyses].count("Analyse freinage") == 1
 
         predictions = create_dynamic_predictions_endpoint(
             analysis_id,
@@ -492,7 +509,9 @@ def test_dynamic_analysis_definition_prediction_and_correction(tmp_path: Path):
         assert predictions["context_summary"]["segment_count"] == 1
         prediction = predictions["items"][0]
         assert prediction["annotation_id"] == annotation["annotation_id"]
-        assert prediction["response_json"]["label_category"] == "freinage"
+        assert prediction["summary_text"]
+        assert "Dry-run" in prediction["analysis_text"]
+        assert prediction["input_artifact_path"]
         assert list_dynamic_predictions_endpoint(analysis_id, dynamic_analysis["dynamic_analysis_id"], conn)["items"][0]["prediction_id"] == prediction["prediction_id"]
 
         correction = create_dynamic_prediction_correction_endpoint(
@@ -501,9 +520,14 @@ def test_dynamic_analysis_definition_prediction_and_correction(tmp_path: Path):
             DynamicPredictionCorrectionRequest(
                 corrected_response_markdown="Correction analyste",
                 corrected_response_json={"synthese": "Correction analyste"},
+                corrected_analysis_text="Correction analyste",
+                corrected_summary_text="Synthèse corrigée",
                 corrected_confidence="haute",
                 validated_for_dataset=True,
             ),
             conn,
         )
         assert correction["validated_for_dataset"] is True
+        deletion = delete_dynamic_analysis_endpoint(analysis_id, dynamic_analysis["dynamic_analysis_id"], conn)
+        assert deletion["deleted"] == dynamic_analysis["dynamic_analysis_id"]
+        assert list_dynamic_analyses_endpoint(analysis_id, conn)["items"] == []

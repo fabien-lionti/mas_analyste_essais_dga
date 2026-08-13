@@ -71,9 +71,11 @@ def test_root_serves_ui_html():
     assert 'id="annotationCatalogTable"' in html
     assert 'id="createAnnotationLabelBtn"' in html
     assert 'id="renameAnnotationLabelBtn"' in html
-    assert 'id="dynamicAnalysisUserPromptInput"' in html
-    assert 'id="dynamicAnalysisChannelSelect"' in html
-    assert 'id="buildDynamicContextBtn"' in html
+    assert 'id="dynamicAnalysisChannelChecklist"' in html
+    assert 'id="dynamicAnalysisLabelChecklist"' in html
+    assert 'id="dynamicAnalysisUserPromptInput"' not in html
+    assert 'id="dynamicAnalysisChannelSelect"' not in html
+    assert 'id="buildDynamicContextBtn"' not in html
     assert 'id="runDynamicAnalysisBtn"' in html
     assert 'id="dynamicAnalysisRunsTable"' in html
     assert "Annotateur actif de segments" not in html

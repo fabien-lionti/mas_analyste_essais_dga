@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Analyse Essais DGA</title>
   <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
-  <link rel="stylesheet" href="/static/styles.css?v=20260724-17">
+  <link rel="stylesheet" href="/static/styles.css?v=20260724-18">
 </head>
 <body>
   <header>
@@ -53,6 +53,10 @@
               </div>
             </div>
             <div class="row">
+              <button type="button" id="createAnalysisBtn">Créer une analyse</button>
+              <div class="muted" id="workflowSourceState">Aucun périmètre DXD initialisé</div>
+            </div>
+            <div class="row">
               <label class="row">
                 <input id="discoverOnCreateInput" type="checkbox" checked style="width:auto">
                 <span>Rattacher les .dxd à la création</span>
@@ -61,10 +65,6 @@
                 <input id="recursiveInput" type="checkbox" style="width:auto">
                 <span>Scanner récursivement</span>
               </label>
-            </div>
-            <div class="row">
-              <button type="button" id="createAnalysisBtn">Identifier les DXD</button>
-              <div class="muted" id="workflowSourceState">Aucun périmètre DXD initialisé</div>
             </div>
           </div>
         </div>
@@ -510,9 +510,9 @@
         <div class="panel stack">
           <h2>Analyse dynamique</h2>
           <div class="subtabs" id="dynamicAnalysisTabs">
-            <button type="button" class="active" data-dynamic-step="analysis">1. Analyse</button>
-            <button type="button" data-dynamic-step="prepare">2. Préparer</button>
-            <button type="button" data-dynamic-step="results">3. Résultats</button>
+            <button type="button" class="active" data-dynamic-step="analysis">1. Créer / modifier</button>
+            <button type="button" data-dynamic-step="choice">2. Choix analyse dynamique</button>
+            <button type="button" data-dynamic-step="generate">3. Génération / validation</button>
           </div>
 
           <div class="dynamic-analysis-step active" id="dynamic-analysis-analysis">
@@ -520,22 +520,6 @@
               <div>
                 <label for="dynamicAnalysisNameInput">Nom de l'analyse dynamique</label>
                 <input id="dynamicAnalysisNameInput" value="Analyse dynamique">
-              </div>
-              <div>
-                <label for="dynamicAnalysisPromptSelect">Analyse dynamique existante</label>
-                <select id="dynamicAnalysisPromptSelect">
-                  <option value="">Nouvelle analyse dynamique</option>
-                </select>
-              </div>
-            </div>
-            <div class="grid-2">
-              <div>
-                <label for="dynamicAnalysisPromptNameInput">Nom du protocole</label>
-                <input id="dynamicAnalysisPromptNameInput" value="Analyse de segments annotés">
-              </div>
-              <div>
-                <label for="dynamicAnalysisLabelCategorySelect">Catégorie de label</label>
-                <select id="dynamicAnalysisLabelCategorySelect"></select>
               </div>
             </div>
             <div>
@@ -547,86 +531,62 @@
               <textarea id="dynamicAnalysisSystemPromptInput" rows="4">Tu es un expert en dynamique véhicule. Analyse uniquement les signaux, annotations et métadonnées fournis. Cite les segments et canaux utilisés.</textarea>
             </div>
             <div>
-              <label for="dynamicAnalysisOutputSchemaInput">Schéma de sortie attendu</label>
-              <textarea id="dynamicAnalysisOutputSchemaInput" class="code-textarea" rows="7">{
-  "synthese": "string",
-  "segments_remarquables": [],
-  "incoherences": [],
-  "niveau_confiance": "faible|moyen|haut",
-  "points_a_verifier": []
-}</textarea>
+              <label>Canaux pertinents</label>
+              <div id="dynamicAnalysisChannelChecklist" class="scroll-table compact-table selection-table"></div>
+            </div>
+            <div>
+              <label>Labels / segments pertinents</label>
+              <div id="dynamicAnalysisLabelChecklist" class="scroll-table compact-table selection-table"></div>
             </div>
             <div class="row">
-              <button type="button" id="saveDynamicPromptBtn">Sauvegarder analyse dynamique</button>
+              <button type="button" id="saveDynamicPromptBtn">Créer l'analyse dynamique</button>
+            </div>
+            <div id="dynamicAnalysisStatus" class="status-text">Sélectionne les canaux et segments pertinents.</div>
+          </div>
+
+          <div class="dynamic-analysis-step" id="dynamic-analysis-choice">
+            <div>
+              <label for="dynamicAnalysisPromptSelect">Analyse dynamique existante</label>
+              <select id="dynamicAnalysisPromptSelect">
+                <option value="">Aucune analyse dynamique</option>
+              </select>
+            </div>
+            <div class="section-block">
+              <h2>Résumé sélection</h2>
+              <div id="dynamicAnalysisChoiceSummary"></div>
+            </div>
+            <div class="row">
+              <button type="button" id="openDynamicGenerationBtn">Ouvrir génération / validation</button>
+              <button type="button" id="deleteDynamicAnalysisBtn" class="danger">Supprimer</button>
             </div>
           </div>
 
-          <div class="dynamic-analysis-step" id="dynamic-analysis-prepare">
-            <div>
-              <label for="dynamicAnalysisChannelSelect">Canaux resamplés</label>
-              <select id="dynamicAnalysisChannelSelect" multiple size="8"></select>
-            </div>
-            <div>
-              <label for="dynamicAnalysisLabelSelect">Segments inclus</label>
-              <select id="dynamicAnalysisLabelSelect" multiple size="6"></select>
-            </div>
-            <div>
-              <label for="dynamicAnalysisUserPromptInput">Prompt opératoire</label>
-              <textarea id="dynamicAnalysisUserPromptInput" rows="7">Décris les comportements dynamiques observés sur les segments annotés. Compare les canaux sélectionnés, identifie les transitions, les pics, les incohérences éventuelles et formule une synthèse exploitable.</textarea>
-            </div>
+          <div class="dynamic-analysis-step" id="dynamic-analysis-generate">
             <div class="grid-2">
-              <div>
-                <label for="dynamicContextBeforeInput">Contexte avant (s)</label>
-                <input id="dynamicContextBeforeInput" type="number" min="0" max="120" step="1" value="5">
+              <div class="section-block">
+                <h2>Trajectoires / annotations</h2>
+                <div id="dynamicAnalysisRunsTable"></div>
               </div>
-              <div>
-                <label for="dynamicContextAfterInput">Contexte après (s)</label>
-                <input id="dynamicContextAfterInput" type="number" min="0" max="120" step="1" value="10">
+              <div class="section-block">
+                <h2>Segment courant</h2>
+                <div id="dynamicGenerationSegmentSummary" class="summary-grid"></div>
               </div>
             </div>
-            <div class="grid-2">
-              <div>
-                <label for="dynamicMaxSegmentsInput">Segments max</label>
-                <input id="dynamicMaxSegmentsInput" type="number" min="1" max="200" step="1" value="25">
-              </div>
-              <div>
-                <label for="dynamicMaxPointsInput">Points / segment</label>
-                <input id="dynamicMaxPointsInput" type="number" min="20" max="2000" step="10" value="250">
-              </div>
+            <div class="section-block">
+              <h2>Artefact visuel</h2>
+              <img id="dynamicArtifactPreview" class="artifact-preview" alt="Artefact visuel du segment">
             </div>
             <div class="row">
-              <button type="button" id="buildDynamicContextBtn" class="secondary">Construire contexte</button>
-              <button type="button" id="runDynamicAnalysisBtn">Lancer analyse</button>
+              <button type="button" id="runDynamicAnalysisBtn">Lancer prédiction LLM</button>
             </div>
-            <div id="dynamicAnalysisStatus" class="status-text">Sélectionne les canaux, labels et protocole opératoire.</div>
             <div class="section-block">
-              <h2>Aperçu contexte</h2>
-              <div id="dynamicContextSummary"></div>
-              <pre id="dynamicContextPreview" class="json-preview"></pre>
-            </div>
-          </div>
-
-          <div class="dynamic-analysis-step" id="dynamic-analysis-results">
-            <div class="section-block">
-              <h2>Résultat</h2>
+              <h2>Synthèse et analyse</h2>
               <div id="dynamicAnalysisResult" class="analysis-markdown"></div>
-            </div>
-            <div class="section-block">
-              <h2>Prédictions par annotation</h2>
-              <div id="dynamicAnalysisRunsTable"></div>
             </div>
             <div class="section-block stack">
               <h2>Correction humaine</h2>
               <textarea id="dynamicAnalysisCorrectionInput" rows="7" placeholder="Sélectionne une prédiction puis corrige la réponse ici."></textarea>
-              <div class="grid-3">
-                <div>
-                  <label for="dynamicAnalysisConfidenceSelect">Confiance</label>
-                  <select id="dynamicAnalysisConfidenceSelect">
-                    <option value="faible">Faible</option>
-                    <option value="moyenne" selected>Moyenne</option>
-                    <option value="haute">Haute</option>
-                  </select>
-                </div>
+              <div class="grid-2">
                 <div>
                   <label for="dynamicAnalysisCorrectionNoteInput">Note</label>
                   <input id="dynamicAnalysisCorrectionNoteInput" value="Correction humaine">
@@ -646,6 +606,6 @@
     </main>
   </div>
 
-  <script src="/static/app.js?v=20260724-14"></script>
+  <script src="/static/app.js?v=20260724-15"></script>
 </body>
 </html>

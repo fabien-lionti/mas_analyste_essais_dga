@@ -28,6 +28,66 @@ def row_to_analysis(row: sqlite3.Row) -> dict[str, Any]:
     }
 
 
+def _analysis_readiness(conn: sqlite3.Connection, analysis_id: str) -> dict[str, Any]:
+    files = conn.execute(
+        """
+        SELECT
+          COUNT(*) AS total_files,
+          SUM(CASE WHEN resampled_json_path IS NOT NULL THEN 1 ELSE 0 END) AS resampled_files
+        FROM analysis_files
+        WHERE analysis_id = ?
+        """,
+        (analysis_id,),
+    ).fetchone()
+    channel_structure = conn.execute(
+        """
+        SELECT status, recurrent_channels_json
+        FROM channel_structures
+        WHERE analysis_id = ?
+        """,
+        (analysis_id,),
+    ).fetchone()
+    validated_structure = conn.execute(
+        """
+        SELECT selected_channels_json, status
+        FROM channel_validated_structures
+        WHERE analysis_id = ?
+        """,
+        (analysis_id,),
+    ).fetchone()
+
+    total_files = int(files["total_files"] or 0)
+    resampled_files = int(files["resampled_files"] or 0)
+    recurrent_channels = _json_loads(channel_structure["recurrent_channels_json"], []) if channel_structure else []
+    selected_channels = _json_loads(validated_structure["selected_channels_json"], []) if validated_structure else []
+
+    missing_steps: list[str] = []
+    if total_files == 0:
+        missing_steps.append("DXD à rattacher")
+    if channel_structure is None:
+        missing_steps.append("Scan canaux à lancer")
+    if not selected_channels:
+        missing_steps.append("Structure canaux à sauvegarder")
+    if resampled_files == 0:
+        missing_steps.append("JSON resamplés à exporter")
+
+    return {
+        "ready": not missing_steps,
+        "status": "ready" if not missing_steps else "incomplete",
+        "missing_steps": missing_steps,
+        "file_count": total_files,
+        "resampled_json_count": resampled_files,
+        "recurrent_channel_count": len(recurrent_channels),
+        "selected_channel_count": len(selected_channels),
+        "channel_scan_status": channel_structure["status"] if channel_structure else "not_started",
+        "validated_structure_status": validated_structure["status"] if validated_structure else "missing",
+    }
+
+
+def enrich_analysis(conn: sqlite3.Connection, analysis: dict[str, Any]) -> dict[str, Any]:
+    return {**analysis, "readiness": _analysis_readiness(conn, analysis["analysis_id"])}
+
+
 def create_analysis(
     conn: sqlite3.Connection,
     *,
@@ -68,7 +128,7 @@ def get_analysis(conn: sqlite3.Connection, analysis_id: str) -> dict[str, Any] |
         "SELECT * FROM analyses WHERE analysis_id = ?",
         (analysis_id,),
     ).fetchone()
-    return row_to_analysis(row) if row else None
+    return enrich_analysis(conn, row_to_analysis(row)) if row else None
 
 
 def list_analyses(conn: sqlite3.Connection, limit: int = 100) -> list[dict[str, Any]]:
@@ -81,7 +141,7 @@ def list_analyses(conn: sqlite3.Connection, limit: int = 100) -> list[dict[str, 
         """,
         (max(1, min(int(limit), 1000)),),
     ).fetchall()
-    return [row_to_analysis(row) for row in rows]
+    return [enrich_analysis(conn, row_to_analysis(row)) for row in rows]
 
 
 def update_analysis_summary(conn: sqlite3.Connection, analysis_id: str, summary: dict[str, Any]) -> None:
