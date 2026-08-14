@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Analyse Essais DGA</title>
   <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
-  <link rel="stylesheet" href="/static/styles.css?v=20260724-18">
+  <link rel="stylesheet" href="/static/styles.css?v=20260724-25">
 </head>
 <body>
   <header>
@@ -327,14 +327,17 @@
         <div class="panel stack">
           <h2>Annotations</h2>
           <div class="subtabs" id="annotationTabs">
-            <button type="button" class="active" data-annotation-step="annotate">1. Annoter</button>
-            <button type="button" data-annotation-step="catalog">2. Catalogue des annotations</button>
+            <button type="button" class="active" data-annotation-step="catalog">1. Catalogue des annotations</button>
+            <button type="button" data-annotation-step="annotate">2. Annoter</button>
           </div>
         </div>
-        <div class="annotation-step active" id="annotation-annotate">
+        <div class="annotation-step" id="annotation-annotate">
           <div class="annotation-layout">
-          <aside class="panel stack annotation-sidebar">
-            <h2>Annoter</h2>
+          <aside class="panel stack annotation-sidebar filter-panel">
+            <div class="filter-toggle-row">
+              <h2>Annoter</h2>
+              <button type="button" class="secondary filter-toggle-btn" data-toggle-layout="annotation-annotate" title="Masquer les filtres">‹</button>
+            </div>
             <div class="grid-2">
               <div>
                 <label for="annotationDateFromInput">Date début</label>
@@ -382,25 +385,14 @@
               <input id="annotationEndRangeInput" type="range" min="0" max="1" value="1" step="0.01">
             </div>
             <div>
-              <label>Prochain clic signal</label>
-              <div class="segmented-control">
-                <button type="button" id="annotationClickStartBtn" class="secondary">Début</button>
-                <button type="button" id="annotationClickEndBtn" class="secondary active">Fin</button>
-              </div>
+              <label>Clic signal</label>
+              <div class="muted">Clic: début du segment. Ctrl + clic: fin du segment.</div>
             </div>
             <div>
               <label for="annotationLabelSelect">Label</label>
               <select id="annotationLabelSelect">
                 <option value="">Aucun label disponible</option>
               </select>
-            </div>
-            <div>
-              <label for="annotationConfidenceInput">Confiance</label>
-              <input id="annotationConfidenceInput" type="number" min="0" max="1" step="0.05" value="1">
-            </div>
-            <div>
-              <label for="annotationCommentInput">Commentaire</label>
-              <textarea id="annotationCommentInput" rows="3"></textarea>
             </div>
             <div class="row">
               <button type="button" id="saveAnnotationBtn">Sauvegarder segment</button>
@@ -424,46 +416,8 @@
           </div>
         </div>
         </div>
-        <div class="annotation-step" id="annotation-catalog">
-          <div class="grid-2 annotation-catalog-layout">
-            <div class="panel stack">
-              <h2>Filtres catalogue</h2>
-              <div class="grid-2">
-                <div>
-                  <label for="annotationCatalogDateFromInput">Date début</label>
-                  <select id="annotationCatalogDateFromInput">
-                    <option value="">Toutes les dates</option>
-                  </select>
-                </div>
-                <div>
-                  <label for="annotationCatalogDateToInput">Date fin</label>
-                  <select id="annotationCatalogDateToInput">
-                    <option value="">Toutes les dates</option>
-                  </select>
-                </div>
-              </div>
-              <div>
-                <label for="annotationCatalogLabelSelect">Label</label>
-                <select id="annotationCatalogLabelSelect">
-                  <option value="">Tous les labels</option>
-                </select>
-              </div>
-              <div>
-                <label for="annotationCatalogFileInput">Filtrer fichier</label>
-                <input id="annotationCatalogFileInput" type="search" placeholder="Nom DXD ou JSON">
-              </div>
-              <div class="grid-2">
-                <div>
-                  <label for="annotationCatalogMinDurationInput">Durée min (s)</label>
-                  <input id="annotationCatalogMinDurationInput" type="number" min="0" step="0.1">
-                </div>
-                <div>
-                  <label for="annotationCatalogMaxDurationInput">Durée max (s)</label>
-                  <input id="annotationCatalogMaxDurationInput" type="number" min="0" step="0.1">
-                </div>
-              </div>
-              <div id="annotationCatalogStatus" class="status-text">Catalogue non chargé.</div>
-            </div>
+        <div class="annotation-step active" id="annotation-catalog">
+          <div class="annotation-catalog-layout">
             <div class="panel stack">
               <h2>Gestion labels</h2>
               <div class="grid-2">
@@ -475,10 +429,6 @@
                   <label for="annotationNewLabelColorInput">Couleur</label>
                   <input id="annotationNewLabelColorInput" type="color" value="#1368ce">
                 </div>
-              </div>
-              <div>
-                <label for="annotationNewLabelDescriptionInput">Description</label>
-                <input id="annotationNewLabelDescriptionInput">
               </div>
               <div class="row">
                 <button type="button" id="createAnnotationLabelBtn">Créer label</button>
@@ -610,6 +560,6 @@
     </main>
   </div>
 
-  <script src="/static/app.js?v=20260724-16"></script>
+  <script src="/static/app.js?v=20260724-24"></script>
 </body>
 </html>

@@ -353,11 +353,58 @@ main {
   align-items: start;
 }
 
+.annotation-layout.filters-collapsed {
+  grid-template-columns: 44px minmax(0, 1fr);
+}
+
 .annotation-layout {
   display: grid;
   grid-template-columns: 320px minmax(0, 1fr);
   gap: 14px;
   align-items: start;
+}
+
+.filter-panel {
+  min-width: 0;
+  overflow: hidden;
+}
+
+.filter-toggle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+.filter-toggle-row h2 {
+  margin-bottom: 0;
+  min-width: 0;
+}
+
+.filter-toggle-btn {
+  flex: 0 0 30px;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  font-size: 18px;
+  line-height: 1;
+}
+
+.filters-collapsed > .filter-panel {
+  padding: 6px;
+}
+
+.filters-collapsed > .filter-panel > :not(.filter-toggle-row) {
+  display: none;
+}
+
+.filters-collapsed .filter-toggle-row {
+  justify-content: center;
+}
+
+.filters-collapsed .filter-toggle-row h2 {
+  display: none;
 }
 
 .annotation-sidebar {
@@ -427,6 +474,14 @@ main {
 .plot-panel {
   width: 100%;
   height: 420px;
+  min-width: 0;
+}
+
+.plot-panel .js-plotly-plot,
+.plot-panel .plot-container,
+.plot-panel .svg-container {
+  width: 100% !important;
+  max-width: 100%;
 }
 
 .status-text {

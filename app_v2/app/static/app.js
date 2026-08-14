@@ -32,7 +32,7 @@ const state = {
   annotationManagedLabels: [],
   annotationEditingId: "",
   annotationSeries: null,
-  annotationClickTarget: "end",
+  annotationTrajectory: null,
   annotationCatalog: [],
   annotationLabelSummary: [],
   annotationStep: "annotate",
@@ -365,6 +365,17 @@ function resizePlots(ids) {
   });
 }
 
+function resizePlotSoon(id) {
+  requestAnimationFrame(() => {
+    resizePlots([id]);
+    setTimeout(() => resizePlots([id]), 80);
+  });
+}
+
+function plotlyConfig() {
+  return { responsive: true, displaylogo: false };
+}
+
 function resizeAnnotationPlotsSoon() {
   requestAnimationFrame(() => {
     resizePlots(["annotationSignalPlot", "annotationTrajectoryPlot"]);
@@ -372,8 +383,29 @@ function resizeAnnotationPlotsSoon() {
   });
 }
 
+function resizeVisiblePlotsSoon() {
+  requestAnimationFrame(() => {
+    resizePlots(["explorationSignalPlot", "explorationTrajectoryPlot", "parametricPlot", "annotationSignalPlot", "annotationTrajectoryPlot"]);
+    setTimeout(() => {
+      resizePlots(["explorationSignalPlot", "explorationTrajectoryPlot", "parametricPlot", "annotationSignalPlot", "annotationTrajectoryPlot"]);
+    }, 120);
+  });
+}
+
+function toggleFilterLayout(button) {
+  const step = $(button.dataset.toggleLayout || "");
+  const layout = step?.querySelector(".exploration-layout, .annotation-layout");
+  if (!layout) return;
+  const collapsed = layout.classList.toggle("filters-collapsed");
+  button.textContent = collapsed ? "›" : "‹";
+  button.title = collapsed ? "Afficher les filtres" : "Masquer les filtres";
+  button.setAttribute("aria-expanded", String(!collapsed));
+  resizeVisiblePlotsSoon();
+}
+
 function plotlyLayout(title, ytitle = "") {
   return {
+    autosize: true,
     title: { text: title, font: { color: "#17202c", size: 13 } },
     paper_bgcolor: "#ffffff",
     plot_bgcolor: "#fbfcfe",
@@ -589,7 +621,7 @@ function renderExplorationLabels() {
 function drawEmptyPlot(plotId, message) {
   const node = $(plotId);
   if (!node || !window.Plotly) return;
-  Plotly.react(plotId, [], {
+  Promise.resolve(Plotly.react(plotId, [], {
     ...plotlyLayout(message),
     annotations: [{
       text: message,
@@ -600,7 +632,7 @@ function drawEmptyPlot(plotId, message) {
       showarrow: false,
       font: { color: "#657386", size: 13 },
     }],
-  }, { responsive: true, displaylogo: false });
+  }, plotlyConfig())).then(() => resizePlotSoon(plotId));
 }
 
 function drawSignalPlot(payload) {
@@ -629,7 +661,8 @@ function drawSignalPlot(payload) {
       zerolinecolor: "#d7dee8",
     };
   }
-  Plotly.react("explorationSignalPlot", traces, layout, { responsive: true, displaylogo: false });
+  Promise.resolve(Plotly.react("explorationSignalPlot", traces, layout, plotlyConfig()))
+    .then(() => resizePlotSoon("explorationSignalPlot"));
 }
 
 function drawTrajectoryPlot(payload) {
@@ -653,7 +686,8 @@ function drawTrajectoryPlot(payload) {
   layout.xaxis.title = "longitude";
   layout.yaxis.scaleanchor = "x";
   layout.yaxis.scaleratio = 1;
-  Plotly.react("explorationTrajectoryPlot", [trace], layout, { responsive: true, displaylogo: false });
+  Promise.resolve(Plotly.react("explorationTrajectoryPlot", [trace], layout, plotlyConfig()))
+    .then(() => resizePlotSoon("explorationTrajectoryPlot"));
 }
 
 function drawAnnotationSignalPlot(payload) {
@@ -762,19 +796,30 @@ function drawAnnotationSignalPlot(payload) {
       zerolinecolor: "#d7dee8",
     };
   }
-  Promise.resolve(Plotly.react("annotationSignalPlot", [...traces, guideTrace], layout, {
-    responsive: true,
-    displaylogo: false,
-  })).then(bindAnnotationPlotSelection);
+  Promise.resolve(Plotly.react("annotationSignalPlot", [...traces, guideTrace], layout, plotlyConfig()))
+    .then(() => {
+      resizePlotSoon("annotationSignalPlot");
+      bindAnnotationPlotSelection();
+    });
 }
 
 function drawAnnotationTrajectoryPlot(payload) {
   if (!window.Plotly) return;
+  state.annotationTrajectory = payload;
   const items = payload.items || [];
   if (!items.length) {
     drawEmptyPlot("annotationTrajectoryPlot", "Trajectoire GPS indisponible");
     return;
   }
+  const currentStart = Number($("annotationStartInput")?.value);
+  const currentEnd = Number($("annotationEndInput")?.value);
+  const hasCurrentSegment = Number.isFinite(currentStart) && Number.isFinite(currentEnd) && currentEnd > currentStart;
+  const segmentItems = hasCurrentSegment
+    ? items.filter(item => {
+      const time = Number(item.time);
+      return Number.isFinite(time) && time >= currentStart && time <= currentEnd;
+    })
+    : [];
   const trace = {
     type: "scattergl",
     mode: "lines",
@@ -782,14 +827,29 @@ function drawAnnotationTrajectoryPlot(payload) {
     x: items.map(item => item.lon),
     y: items.map(item => item.lat),
     text: items.map(item => `t=${Number(item.time || 0).toFixed(1)}s`),
-    line: { color: "#1368ce", width: 2 },
+    line: { color: segmentItems.length ? "rgba(19, 104, 206, 0.34)" : "#1368ce", width: 2 },
     hovertemplate: "lon=%{x:.6f}<br>lat=%{y:.6f}<br>%{text}<extra></extra>",
   };
+  const traces = [trace];
+  if (segmentItems.length) {
+    traces.push({
+      type: "scattergl",
+      mode: "lines+markers",
+      name: "segment courant",
+      x: segmentItems.map(item => item.lon),
+      y: segmentItems.map(item => item.lat),
+      text: segmentItems.map(item => `t=${Number(item.time || 0).toFixed(1)}s`),
+      line: { color: "#e26d0a", width: 5 },
+      marker: { color: "#e26d0a", size: 5 },
+      hovertemplate: "segment<br>lon=%{x:.6f}<br>lat=%{y:.6f}<br>%{text}<extra></extra>",
+    });
+  }
   const layout = plotlyLayout("Trajectoire GPS", "latitude");
   layout.xaxis.title = "longitude";
   layout.yaxis.scaleanchor = "x";
   layout.yaxis.scaleratio = 1;
-  Plotly.react("annotationTrajectoryPlot", [trace], layout, { responsive: true, displaylogo: false });
+  Promise.resolve(Plotly.react("annotationTrajectoryPlot", traces, layout, plotlyConfig()))
+    .then(() => resizePlotSoon("annotationTrajectoryPlot"));
 }
 
 function drawParametricPlot(payload) {
@@ -813,7 +873,8 @@ function drawParametricPlot(payload) {
   };
   const layout = plotlyLayout("Vision paramétrique", payload.y_channel);
   layout.xaxis.title = payload.x_channel;
-  Plotly.react("parametricPlot", [trace], layout, { responsive: true, displaylogo: false });
+  Promise.resolve(Plotly.react("parametricPlot", [trace], layout, plotlyConfig()))
+    .then(() => resizePlotSoon("parametricPlot"));
 }
 
 async function loadExplorationFiles() {
@@ -1431,14 +1492,10 @@ function resetAnnotationForm() {
   const start = $("annotationStartInput");
   const end = $("annotationEndInput");
   const label = $("annotationLabelSelect");
-  const confidence = $("annotationConfidenceInput");
-  const comment = $("annotationCommentInput");
   if (start) start.value = "0";
   if (end) end.value = "1";
   updateAnnotationRangeSlider();
   if (label) label.value = "";
-  if (confidence) confidence.value = "1";
-  if (comment) comment.value = "";
   const button = $("saveAnnotationBtn");
   if (button) button.textContent = "Sauvegarder segment";
 }
@@ -1484,6 +1541,9 @@ function redrawAnnotationCurrentSegment() {
   if (state.annotationSeries) {
     drawAnnotationSignalPlot(state.annotationSeries);
   }
+  if (state.annotationTrajectory) {
+    drawAnnotationTrajectoryPlot(state.annotationTrajectory);
+  }
 }
 
 function setAnnotationStart(value) {
@@ -1503,24 +1563,34 @@ function setAnnotationStart(value) {
   redrawAnnotationCurrentSegment();
 }
 
-function setAnnotationEnd(value) {
+function previousAnnotationEndBefore(endTime) {
+  const numericEnd = Number(endTime);
+  const minLen = annotationMinSegmentLen();
+  if (!Number.isFinite(numericEnd)) return annotationMinTime();
+  const previousEnds = state.annotations
+    .filter(annotation => annotation.annotation_id !== state.annotationEditingId)
+    .map(annotation => Number(annotation.end_time_sec))
+    .filter(end => Number.isFinite(end) && end <= numericEnd - minLen)
+    .sort((a, b) => b - a);
+  return previousEnds.length ? previousEnds[0] : annotationMinTime();
+}
+
+function setAnnotationEnd(value, options = {}) {
   const startInput = $("annotationStartInput");
   const endInput = $("annotationEndInput");
   const tMax = annotationMaxTime();
   const minLen = annotationMinSegmentLen();
-  const start = Number(startInput?.value);
+  const requestedEnd = Math.min(Number(value), tMax);
+  const start = options.snapStartToPrevious && !state.annotationEditingId
+    ? previousAnnotationEndBefore(requestedEnd)
+    : Number(startInput?.value);
   const safeStart = Number.isFinite(start) ? start : annotationMinTime();
-  const nextEnd = Math.max(safeStart + minLen, Math.min(Number(value), tMax));
+  const nextEnd = Math.max(safeStart + minLen, requestedEnd);
   if (startInput && !Number.isFinite(start)) startInput.value = safeStart.toFixed(2);
+  if (startInput && options.snapStartToPrevious && !state.annotationEditingId) startInput.value = safeStart.toFixed(2);
   if (endInput) endInput.value = nextEnd.toFixed(2);
   updateAnnotationRangeSlider();
   redrawAnnotationCurrentSegment();
-}
-
-function setAnnotationClickTarget(target) {
-  state.annotationClickTarget = target === "start" ? "start" : "end";
-  $("annotationClickStartBtn")?.classList.toggle("active", state.annotationClickTarget === "start");
-  $("annotationClickEndBtn")?.classList.toggle("active", state.annotationClickTarget === "end");
 }
 
 function editAnnotation(annotationId) {
@@ -1530,8 +1600,6 @@ function editAnnotation(annotationId) {
   $("annotationStartInput").value = annotation.start_time_sec;
   $("annotationEndInput").value = annotation.end_time_sec;
   $("annotationLabelSelect").value = annotation.label || "";
-  $("annotationConfidenceInput").value = annotation.confidence ?? "";
-  $("annotationCommentInput").value = annotation.comment || "";
   $("saveAnnotationBtn").textContent = "Modifier segment";
   updateAnnotationRangeSlider();
   redrawAnnotationCurrentSegment();
@@ -1548,6 +1616,8 @@ function setAnnotationRangeFromPlotPoints(points) {
   if (end <= start) return;
   $("annotationStartInput").value = start.toFixed(2);
   $("annotationEndInput").value = end.toFixed(2);
+  updateAnnotationRangeSlider();
+  redrawAnnotationCurrentSegment();
   setAnnotationStatus(`Segment sélectionné: ${start.toFixed(2)} s -> ${end.toFixed(2)} s`);
 }
 
@@ -1576,6 +1646,8 @@ function setAnnotationRange(start, end) {
   if (right <= left) return;
   $("annotationStartInput").value = left.toFixed(2);
   $("annotationEndInput").value = right.toFixed(2);
+  updateAnnotationRangeSlider();
+  redrawAnnotationCurrentSegment();
   setAnnotationStatus(`Segment sélectionné: ${left.toFixed(2)} s -> ${right.toFixed(2)} s`);
 }
 
@@ -1591,11 +1663,14 @@ function bindAnnotationPlotSelection() {
     plot.on("plotly_click", event => {
       const x = Number(event?.points?.[0]?.x);
       if (!Number.isFinite(x)) return;
-      if (state.annotationClickTarget === "start") {
-        setAnnotationStart(x);
-      } else {
+      const sourceEvent = event?.event || event?.originalEvent || event?.points?.[0]?.event;
+      if (sourceEvent?.ctrlKey || sourceEvent?.metaKey) {
         setAnnotationEnd(x);
+        setAnnotationStatus(`Fin segment positionnée: ${x.toFixed(2)} s`);
+        return;
       }
+      setAnnotationStart(x);
+      setAnnotationStatus(`Début segment positionné: ${x.toFixed(2)} s`);
     });
   }
 }
@@ -1723,7 +1798,9 @@ function renderAnnotationCatalog() {
     rows,
     "Aucune annotation dans le filtre"
   );
-  $("annotationCatalogStatus").textContent = `${rows.length} annotation(s) affichée(s), ${state.annotationCatalog.length} total.`;
+  if ($("annotationCatalogStatus")) {
+    $("annotationCatalogStatus").textContent = `${rows.length} annotation(s) affichée(s), ${state.annotationCatalog.length} total.`;
+  }
   document.querySelectorAll(".annotation-open").forEach(button => {
     button.addEventListener("click", () => {
       wrapAction(() => openAnnotationFromCatalog(button.dataset.annotationId), "Annotation ouverte")();
@@ -2050,7 +2127,9 @@ function annotationPayload() {
   const start = Number($("annotationStartInput")?.value);
   const end = Number($("annotationEndInput")?.value);
   const label = $("annotationLabelSelect")?.value.trim();
-  const confidenceValue = $("annotationConfidenceInput")?.value;
+  const current = state.annotationEditingId
+    ? state.annotations.find(item => item.annotation_id === state.annotationEditingId)
+    : null;
   if (!fileId) throw new Error("Aucun fichier sélectionné");
   if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) {
     throw new Error("Le segment doit avoir une fin strictement supérieure au début");
@@ -2061,8 +2140,8 @@ function annotationPayload() {
     start_time_sec: start,
     end_time_sec: end,
     label,
-    confidence: confidenceValue === "" ? null : Number(confidenceValue),
-    comment: $("annotationCommentInput")?.value || null,
+    confidence: current?.confidence ?? null,
+    comment: current?.comment ?? null,
     metadata: {
       source: "app_v2_ui",
       channels: selectedAnnotationChannels(),
@@ -2171,7 +2250,9 @@ async function createAnnotationLabel() {
     }),
   });
   $("annotationNewLabelInput").value = "";
-  $("annotationNewLabelDescriptionInput").value = "";
+  if ($("annotationNewLabelDescriptionInput")) {
+    $("annotationNewLabelDescriptionInput").value = "";
+  }
   await loadAnnotationCatalog();
   $("annotationLabelSelect").value = name;
 }
@@ -2946,11 +3027,14 @@ function bindActions() {
     $(`view-${button.dataset.view}`).classList.add("active");
     if (button.dataset.view === "annotations") {
       wrapAction(async () => {
+        showAnnotationStep("catalog");
         await loadAnnotationDateRange();
         await loadAnnotationFiles();
         await loadAnnotationCatalog();
-        resizeAnnotationPlotsSoon();
       }, "Annotations chargées")();
+    }
+    if (button.dataset.view === "exploration") {
+      resizeVisiblePlotsSoon();
     }
     if (button.dataset.view === "dynamic-analysis") {
       wrapAction(loadDynamicAnalysis, "Analyse dynamique chargée")();
@@ -2966,6 +3050,7 @@ function bindActions() {
     const button = event.target.closest("button[data-exploration-step]");
     if (!button) return;
     showExplorationStep(button.dataset.explorationStep);
+    resizeVisiblePlotsSoon();
     if (button.dataset.explorationStep === "parametric") {
       wrapAction(async () => {
         await loadParametricDateRange();
@@ -3049,8 +3134,6 @@ function bindActions() {
   $("annotationEndRangeInput")?.addEventListener("input", () => {
     setAnnotationEnd(Number($("annotationEndRangeInput").value));
   });
-  $("annotationClickStartBtn")?.addEventListener("click", () => setAnnotationClickTarget("start"));
-  $("annotationClickEndBtn")?.addEventListener("click", () => setAnnotationClickTarget("end"));
   [
     "annotationCatalogDateFromInput",
     "annotationCatalogDateToInput",
@@ -3132,6 +3215,10 @@ function bindActions() {
   }, "Vision paramétrique chargée"));
   ["parametricMaxPointsInput", "parametricScatterInput"].forEach(id => {
     $(id)?.addEventListener("change", wrapAction(refreshParametric, "Vision paramétrique chargée"));
+  });
+  document.querySelectorAll(".filter-toggle-btn").forEach(button => {
+    button.setAttribute("aria-expanded", "true");
+    button.addEventListener("click", () => toggleFilterLayout(button));
   });
   document.addEventListener("keydown", event => {
     const activeView = document.querySelector(".view.active");
