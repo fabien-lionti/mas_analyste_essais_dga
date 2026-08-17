@@ -11,6 +11,11 @@ def test_root_serves_ui_html():
     html = response.body.decode("utf-8")
     assert "Analyse Essais DGA" in html
     assert "/static/app.js" in html
+    assert 'id="loginView"' in html
+    assert 'id="loginForm"' in html
+    assert 'id="loginUserInput"' in html
+    assert 'id="loginPasswordInput"' in html
+    assert 'id="appShell"' in html
     assert "Rattacher les .dxd à la création" in html
     assert "Découverte DXD" not in html
     assert "Analyse active" not in html

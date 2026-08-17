@@ -62,6 +62,7 @@ const DYNAMIC_INDICATORS = [
 
 let explorationDateFilterTimer = null;
 let annotationDateFilterTimer = null;
+const LOGIN_SESSION_KEY = "dynascope_login_v1";
 
 const $ = id => document.getElementById(id);
 
@@ -166,6 +167,32 @@ function renderKpis() {
 function updateKpiVisibility(view) {
   const hiddenViews = new Set(["exploration", "annotations", "dynamic-analysis"]);
   $("kpiGrid")?.classList.toggle("hidden", hiddenViews.has(view));
+}
+
+function showMainView(view) {
+  const target = view || "overview";
+  document.querySelectorAll("#mainNav button").forEach(item => {
+    item.classList.toggle("active", item.dataset.view === target);
+  });
+  document.querySelectorAll(".view").forEach(item => item.classList.remove("active"));
+  $(`view-${target}`)?.classList.add("active");
+  updateKpiVisibility(target);
+}
+
+function showAppShell() {
+  sessionStorage.setItem(LOGIN_SESSION_KEY, "true");
+  $("loginView")?.classList.add("hidden");
+  $("appShell")?.classList.remove("hidden");
+  showMainView("overview");
+}
+
+function initializeLoginState() {
+  if (sessionStorage.getItem(LOGIN_SESSION_KEY) === "true") {
+    showAppShell();
+    return;
+  }
+  $("loginView")?.classList.remove("hidden");
+  $("appShell")?.classList.add("hidden");
 }
 
 function canUseChannelWorkflow() {
@@ -3250,14 +3277,14 @@ async function cancelResampling() {
 }
 
 function bindActions() {
+  $("loginForm")?.addEventListener("submit", event => {
+    event.preventDefault();
+    showAppShell();
+  });
   $("mainNav").addEventListener("click", event => {
     const button = event.target.closest("button[data-view]");
     if (!button) return;
-    document.querySelectorAll("#mainNav button").forEach(item => item.classList.remove("active"));
-    button.classList.add("active");
-    document.querySelectorAll(".view").forEach(item => item.classList.remove("active"));
-    $(`view-${button.dataset.view}`).classList.add("active");
-    updateKpiVisibility(button.dataset.view);
+    showMainView(button.dataset.view);
     if (button.dataset.view === "annotations") {
       wrapAction(async () => {
         showAnnotationStep("catalog");
@@ -3539,7 +3566,7 @@ function wrapAction(fn, successMessage) {
 
 async function init() {
   bindActions();
-  updateKpiVisibility(document.querySelector("#mainNav button.active")?.dataset.view || "overview");
+  initializeLoginState();
   try {
     await loadAnalyses();
     if (state.analysis) {

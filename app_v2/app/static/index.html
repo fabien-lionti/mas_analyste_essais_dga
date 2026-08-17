@@ -5,26 +5,57 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Analyse Essais DGA</title>
   <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
-  <link rel="stylesheet" href="/static/styles.css?v=20260724-29">
+  <link rel="stylesheet" href="/static/styles.css?v=20260724-52">
 </head>
 <body>
-  <header>
-    <div>
-      <img class="brand-logo" src="/static/assets/DynaScope_logo.svg" alt="DynaSCope">
+  <section class="login-view" id="loginView">
+    <div class="login-content">
+      <img class="login-logo" src="/static/assets/DynaScope_logo_white.svg" alt="DynaSCope">
+      <form class="login-panel" id="loginForm">
+        <div class="login-heading">
+          <h1>Connexion</h1>
+          <p>Accéder à votre espace DynaScope</p>
+        </div>
+        <div class="login-fields">
+          <div>
+            <label for="loginUserInput">Identifiant</label>
+            <input id="loginUserInput" autocomplete="username" placeholder="Identifiant">
+          </div>
+          <div>
+            <label for="loginPasswordInput">Mot de passe</label>
+            <input id="loginPasswordInput" type="password" autocomplete="current-password" placeholder="Mot de passe">
+          </div>
+        </div>
+        <div class="login-actions">
+          <button type="submit" id="loginBtn" class="login-submit">Se connecter</button>
+          <label class="remember-row">
+            <input id="rememberLoginInput" type="checkbox">
+            <span>Se souvenir de moi</span>
+          </label>
+          <a class="forgot-password-link" href="#">Mot de passe oublié</a>
+        </div>
+      </form>
     </div>
-    <nav class="nav" id="mainNav">
-      <button type="button" class="active" data-view="overview">Créer une campagne</button>
-      <button type="button" data-view="choice">Choisir une campagne</button>
-      <button type="button" data-view="exploration">Visualisation</button>
-      <button type="button" data-view="annotations">Annotations</button>
-      <button type="button" data-view="dynamic-analysis">Analyse dynamique</button>
-    </nav>
-    <div class="status-bar" id="statusBar">Initialisation</div>
-  </header>
+  </section>
 
-  <div class="layout">
-    <main>
-      <section class="kpis" id="kpiGrid"></section>
+  <div class="app-shell hidden" id="appShell">
+    <header>
+      <div>
+        <img class="brand-logo" src="/static/assets/DynaScope_logo.svg" alt="DynaSCope">
+      </div>
+      <nav class="nav" id="mainNav">
+        <button type="button" class="active" data-view="overview">Créer une campagne</button>
+        <button type="button" data-view="choice">Choisir une campagne</button>
+        <button type="button" data-view="exploration">Visualisation</button>
+        <button type="button" data-view="annotations">Annotations</button>
+        <button type="button" data-view="dynamic-analysis">Analyse dynamique</button>
+      </nav>
+      <div class="status-bar" id="statusBar">Initialisation</div>
+    </header>
+
+    <div class="layout">
+      <main>
+        <section class="kpis" id="kpiGrid"></section>
 
       <section class="view active" id="view-overview">
         <div class="panel stack">
@@ -595,7 +626,8 @@
       </section>
     </main>
   </div>
+  </div>
 
-  <script src="/static/app.js?v=20260724-41"></script>
+  <script src="/static/app.js?v=20260724-42"></script>
 </body>
 </html>
