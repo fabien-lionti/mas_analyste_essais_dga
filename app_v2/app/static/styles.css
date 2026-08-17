@@ -130,6 +130,15 @@ header {
   white-space: nowrap;
 }
 
+.brand-logo {
+  display: block;
+  width: 180px;
+  max-width: 100%;
+  height: 40px;
+  object-fit: contain;
+  object-position: left center;
+}
+
 .subtitle {
   color: var(--muted);
   font-size: 12px;
@@ -436,6 +445,31 @@ main {
 .dynamic-analysis-main {
   min-width: 0;
   width: 100%;
+}
+
+.dynamic-generation-layout {
+  display: grid;
+  grid-template-columns: 340px minmax(0, 1fr);
+  gap: 14px;
+  align-items: start;
+}
+
+.dynamic-generation-sidebar {
+  position: sticky;
+  top: 74px;
+  max-height: calc(100vh - 90px);
+  overflow: auto;
+}
+
+.dynamic-generation-main {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+  width: 100%;
+}
+
+#dynamicGenerationAnnotationSelect {
+  min-height: 280px;
 }
 
 .json-preview {
@@ -833,12 +867,14 @@ tr:last-child td {
   .exploration-layout,
   .annotation-layout,
   .dynamic-analysis-layout,
+  .dynamic-generation-layout,
   .kpis {
     grid-template-columns: 1fr;
   }
 
   .annotation-sidebar,
-  .dynamic-analysis-sidebar {
+  .dynamic-analysis-sidebar,
+  .dynamic-generation-sidebar {
     position: static;
     max-height: none;
   }

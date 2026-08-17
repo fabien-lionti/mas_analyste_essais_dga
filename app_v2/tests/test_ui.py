@@ -22,7 +22,7 @@ def test_root_serves_ui_html():
     assert 'id="dynamicIndicatorsTable"' in html
     assert 'id="saveDynamicIndicatorsBtn"' in html
     assert "Sampling JSON" in html
-    assert "Choix analyse" in html
+    assert "Choisir une campagne" in html
     assert "Analyse dynamique" in html
     assert "Retournement" not in html
     assert 'data-view="models"' not in html
@@ -42,8 +42,8 @@ def test_root_serves_ui_html():
     assert 'data-exploration-step="temporal"' in html
     assert 'data-exploration-step="parametric"' in html
     assert 'data-exploration-step="temporal-drift"' not in html
-    assert "Vision temporelle par signal" in html
-    assert "Vision paramétrique" in html
+    assert "Visualisation temporelle par signal" in html
+    assert "Visualisation paramétrique" in html
     assert "Drift temporel" not in html
     assert 'id="explorationDateFromInput"' in html
     assert 'id="explorationDateToInput"' in html
@@ -80,7 +80,9 @@ def test_root_serves_ui_html():
     assert 'id="dynamicAnalysisChannelSelect"' not in html
     assert 'id="buildDynamicContextBtn"' not in html
     assert 'id="runDynamicAnalysisBtn"' in html
-    assert 'id="dynamicAnalysisRunsTable"' in html
+    assert 'id="dynamicGenerationAnnotationSelect"' in html
+    assert 'id="dynamicGenerationPrevBtn"' in html
+    assert 'id="dynamicGenerationNextBtn"' in html
     assert "Annotateur actif de segments" not in html
     assert "GET /api/analyses/{analysis_id}/exploration/signals/boxplot" not in html
 

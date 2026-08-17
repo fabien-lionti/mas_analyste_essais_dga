@@ -499,9 +499,11 @@ def list_predictions(
     init_db(conn)
     rows = conn.execute(
         """
-        SELECT * FROM dynamic_annotation_predictions
-        WHERE dynamic_analysis_id = ?
-        ORDER BY created_at DESC
+        SELECT p.*
+        FROM dynamic_annotation_predictions p
+        JOIN annotations a ON a.annotation_id = p.annotation_id
+        WHERE p.dynamic_analysis_id = ?
+        ORDER BY p.created_at DESC
         """,
         (dynamic_analysis_id,),
     ).fetchall()

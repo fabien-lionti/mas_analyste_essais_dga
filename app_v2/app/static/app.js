@@ -163,6 +163,11 @@ function renderKpis() {
   `).join("");
 }
 
+function updateKpiVisibility(view) {
+  const hiddenViews = new Set(["exploration", "annotations", "dynamic-analysis"]);
+  $("kpiGrid")?.classList.toggle("hidden", hiddenViews.has(view));
+}
+
 function canUseChannelWorkflow() {
   return Boolean(currentAnalysisId() && state.files.length);
 }
@@ -385,16 +390,16 @@ function resizeAnnotationPlotsSoon() {
 
 function resizeVisiblePlotsSoon() {
   requestAnimationFrame(() => {
-    resizePlots(["explorationSignalPlot", "explorationTrajectoryPlot", "parametricPlot", "annotationSignalPlot", "annotationTrajectoryPlot"]);
+    resizePlots(["explorationSignalPlot", "explorationTrajectoryPlot", "parametricPlot", "annotationSignalPlot", "annotationTrajectoryPlot", "dynamicSegmentSignalPlot"]);
     setTimeout(() => {
-      resizePlots(["explorationSignalPlot", "explorationTrajectoryPlot", "parametricPlot", "annotationSignalPlot", "annotationTrajectoryPlot"]);
+      resizePlots(["explorationSignalPlot", "explorationTrajectoryPlot", "parametricPlot", "annotationSignalPlot", "annotationTrajectoryPlot", "dynamicSegmentSignalPlot"]);
     }, 120);
   });
 }
 
 function toggleFilterLayout(button) {
   const step = $(button.dataset.toggleLayout || "");
-  const layout = step?.querySelector(".exploration-layout, .annotation-layout");
+  const layout = step?.querySelector(".exploration-layout, .annotation-layout, .dynamic-generation-layout");
   if (!layout) return;
   const collapsed = layout.classList.toggle("filters-collapsed");
   button.textContent = collapsed ? "›" : "‹";
@@ -414,6 +419,37 @@ function plotlyLayout(title, ytitle = "") {
     xaxis: { gridcolor: "#e5eaf1", zerolinecolor: "#d7dee8" },
     yaxis: { title: ytitle, gridcolor: "#e5eaf1", zerolinecolor: "#d7dee8" },
     legend: { orientation: "h", y: -0.2 },
+  };
+}
+
+function applyTwoScaleAxes(layout, traces, leftTitle = "", rightTitle = "") {
+  if (!traces.length) return;
+  const leftColor = traces[0]?.line?.color || "#1368ce";
+  layout.yaxis = {
+    ...(layout.yaxis || {}),
+    title: {
+      text: leftTitle || traces[0]?.name || "valeur",
+      font: { color: leftColor },
+    },
+    tickfont: { color: leftColor },
+    linecolor: leftColor,
+    zerolinecolor: "#d7dee8",
+  };
+  if (traces.length < 2) return;
+  const rightColor = traces[1]?.line?.color || "#15803d";
+  layout.yaxis2 = {
+    title: {
+      text: rightTitle || traces[1]?.name || "valeur",
+      font: { color: rightColor },
+    },
+    tickfont: { color: rightColor },
+    linecolor: rightColor,
+    overlaying: "y",
+    side: "right",
+    showgrid: true,
+    gridcolor: `${rightColor}33`,
+    griddash: "dot",
+    zeroline: false,
   };
 }
 
@@ -638,7 +674,7 @@ function drawEmptyPlot(plotId, message) {
 function drawSignalPlot(payload) {
   if (!window.Plotly) return;
   const traces = (payload.channels || []).map((channel, index) => {
-    const axisName = index === 0 || !$("explorationMultiAxisInput").checked ? "y" : `y${index + 1}`;
+    const axisName = index === 1 ? "y2" : "y";
     return {
       type: "scattergl",
       mode: "lines",
@@ -652,15 +688,7 @@ function drawSignalPlot(payload) {
   });
   const layout = plotlyLayout("Signaux rééchantillonnés");
   layout.xaxis.title = "temps (s)";
-  if (traces.length > 1 && $("explorationMultiAxisInput").checked) {
-    layout.yaxis2 = {
-      title: traces[1].name,
-      overlaying: "y",
-      side: "right",
-      gridcolor: "#e5eaf1",
-      zerolinecolor: "#d7dee8",
-    };
-  }
+  applyTwoScaleAxes(layout, traces, traces[0]?.name || "valeur", traces[1]?.name || "valeur");
   Promise.resolve(Plotly.react("explorationSignalPlot", traces, layout, plotlyConfig()))
     .then(() => resizePlotSoon("explorationSignalPlot"));
 }
@@ -704,7 +732,7 @@ function drawAnnotationSignalPlot(payload) {
     name: channel.name,
     x: payload.time || [],
     y: channel.values || [],
-    yaxis: index === 0 ? "y" : `y${index + 1}`,
+    yaxis: index === 1 ? "y2" : "y",
     line: { color: index === 0 ? "#1368ce" : "#15803d", width: 1.5 },
     hovertemplate: "t=%{x:.2f}s<br>val=%{y:.4g}<extra></extra>",
   }));
@@ -787,15 +815,7 @@ function drawAnnotationSignalPlot(payload) {
   layout.dragmode = "closest";
   layout.shapes = [...savedShapes, ...currentShapes];
   layout.annotations = labels;
-  if (traces.length > 1) {
-    layout.yaxis2 = {
-      title: traces[1].name,
-      overlaying: "y",
-      side: "right",
-      gridcolor: "#e5eaf1",
-      zerolinecolor: "#d7dee8",
-    };
-  }
+  applyTwoScaleAxes(layout, traces, channels[0]?.name || channels[0]?.unit || "valeur", channels[1]?.name || channels[1]?.unit || "valeur");
   Promise.resolve(Plotly.react("annotationSignalPlot", [...traces, guideTrace], layout, plotlyConfig()))
     .then(() => {
       resizePlotSoon("annotationSignalPlot");
@@ -871,7 +891,7 @@ function drawParametricPlot(payload) {
     line: { color: "#1368ce", width: 1.3 },
     hovertemplate: "x=%{x:.4g}<br>y=%{y:.4g}<br>%{text}<extra></extra>",
   };
-  const layout = plotlyLayout("Vision paramétrique", payload.y_channel);
+  const layout = plotlyLayout("Visualisation paramétrique", payload.y_channel);
   layout.xaxis.title = payload.x_channel;
   Promise.resolve(Plotly.react("parametricPlot", [trace], layout, plotlyConfig()))
     .then(() => resizePlotSoon("parametricPlot"));
@@ -1158,14 +1178,24 @@ async function openDynamicGeneration() {
   if (!dynamicAnalysis) throw new Error("Aucune analyse dynamique sélectionnée");
   state.dynamicSelectedAnalysisId = dynamicAnalysis.dynamic_analysis_id;
   if ($("dynamicAnalysisPromptSelect")) $("dynamicAnalysisPromptSelect").value = dynamicAnalysis.dynamic_analysis_id;
+  showDynamicAnalysisStep("generate");
+  setDynamicAnalysisStatus("Chargement de la génération / validation...");
   await buildDynamicContext();
   renderDynamicRuns();
   const firstSegment = state.dynamicContext?.segments?.[0];
   if (firstSegment) {
     const prediction = state.dynamicPredictions.find(item => item.annotation_id === firstSegment.annotation_id);
     selectDynamicRun(prediction?.prediction_id || "", firstSegment.annotation_id);
+  } else {
+    renderDynamicGenerationSegment(null, null);
+    const selectedLabels = (dynamicAnalysis.selected_labels || [dynamicAnalysis.label_category]).filter(Boolean);
+    $("dynamicAnalysisResult").innerHTML = `
+      <div class="muted">
+        Aucune annotation ne correspond aux labels sélectionnés pour cette analyse dynamique${selectedLabels.length ? `: ${escapeHtml(selectedLabels.join(", "))}` : ""}.
+      </div>
+    `;
+    setDynamicAnalysisStatus("Aucun segment disponible pour la génération / validation.", "error");
   }
-  showDynamicAnalysisStep("generate");
 }
 
 async function runDynamicAnalysis() {
@@ -1323,7 +1353,6 @@ async function refreshExploration() {
   setExplorationStatus([
     `Fichier: ${currentFile?.resampled_json_name || currentFile?.source_dxd_name || "-"}`,
     `Canaux: ${channels.length ? channels.join(", ") : "-"}`,
-    `Filtre segments: ${$("explorationSegmentSourceSelect").value}`,
     `Label: ${$("explorationLabelSelect").value || "Tous"}`,
   ].join("\n"));
 }
@@ -1908,8 +1937,8 @@ function renderDynamicPromptOptions() {
 }
 
 function selectedDynamicAnalysis() {
-  return state.dynamicAnalyses.find(item => item.dynamic_analysis_id === state.dynamicSelectedAnalysisId)
-    || state.dynamicAnalyses.find(item => item.dynamic_analysis_id === $("dynamicAnalysisPromptSelect")?.value)
+  const selectedId = $("dynamicAnalysisPromptSelect")?.value || state.dynamicSelectedAnalysisId;
+  return state.dynamicAnalyses.find(item => item.dynamic_analysis_id === selectedId)
     || null;
 }
 
@@ -1934,15 +1963,15 @@ function renderDynamicChoiceSummary() {
 }
 
 function dynamicAnalysisPayload() {
-  const dynamicAnalysis = state.dynamicAnalyses.find(item => item.dynamic_analysis_id === $("dynamicAnalysisPromptSelect")?.value);
+  const dynamicAnalysis = selectedDynamicAnalysis();
   return {
-    name: $("dynamicAnalysisNameInput")?.value.trim() || "Analyse dynamique",
+    name: dynamicAnalysis?.name || $("dynamicAnalysisNameInput")?.value.trim() || "Analyse dynamique",
     provider: "dry_run",
     model: null,
     prompt_id: null,
-    system_prompt: $("dynamicAnalysisSystemPromptInput")?.value || "",
+    system_prompt: dynamicAnalysis?.system_prompt || $("dynamicAnalysisSystemPromptInput")?.value || "",
     user_prompt: "Analyse le segment courant à partir des canaux et indicateurs fournis.",
-    channels: selectedDynamicChannels(),
+    channels: dynamicAnalysis?.selected_channels?.length ? dynamicAnalysis.selected_channels : selectedDynamicChannels(),
     labels: dynamicAnalysis?.selected_labels?.length ? dynamicAnalysis.selected_labels : selectedDynamicLabels().filter(Boolean),
     output_schema: dynamicOutputSchema(),
     context_before_sec: 0,
@@ -1979,30 +2008,108 @@ function renderDynamicContext(context) {
       </tr>
     `;
   }).join("");
-  $("dynamicContextSummary").innerHTML = `
-    <div class="summary-grid">
-      ${summaryRows.map(([label, value]) => `
-        <div>
-          <div class="label">${escapeHtml(label)}</div>
-          <div class="value">${escapeHtml(value)}</div>
-        </div>
-      `).join("")}
-    </div>
-    <div class="table-wrap" style="margin-top:12px;">
-      <table>
-        <thead>
-          <tr>
-            <th>Fichier</th>
-            <th>Label</th>
-            <th>Segment (s)</th>
-            <th>Résumé canaux</th>
-          </tr>
-        </thead>
-        <tbody>${segmentRows || '<tr><td colspan="4">Aucun segment dans le contexte.</td></tr>'}</tbody>
-      </table>
-    </div>
-  `;
-  $("dynamicContextPreview").textContent = JSON.stringify(context || {}, null, 2);
+  const contextSummary = $("dynamicContextSummary");
+  if (contextSummary) {
+    contextSummary.innerHTML = `
+      <div class="summary-grid">
+        ${summaryRows.map(([label, value]) => `
+          <div>
+            <div class="label">${escapeHtml(label)}</div>
+            <div class="value">${escapeHtml(value)}</div>
+          </div>
+        `).join("")}
+      </div>
+      <div class="table-wrap" style="margin-top:12px;">
+        <table>
+          <thead>
+            <tr>
+              <th>Fichier</th>
+              <th>Label</th>
+              <th>Segment (s)</th>
+              <th>Résumé canaux</th>
+            </tr>
+          </thead>
+          <tbody>${segmentRows || '<tr><td colspan="4">Aucun segment dans le contexte.</td></tr>'}</tbody>
+        </table>
+      </div>
+    `;
+  }
+  const contextPreview = $("dynamicContextPreview");
+  if (contextPreview) {
+    contextPreview.textContent = JSON.stringify(context || {}, null, 2);
+  }
+}
+
+function drawDynamicSegmentSignalPlot(segment) {
+  const plotId = "dynamicSegmentSignalPlot";
+  const node = $(plotId);
+  if (!node) return;
+  if (!window.Plotly) {
+    node.innerHTML = '<div class="empty-state">Plotly n\\\'est pas chargé.</div>';
+    return;
+  }
+  if (!segment) {
+    drawEmptyPlot(plotId, "Aucun segment disponible");
+    return;
+  }
+  const signalContext = segment?.signal_context || {};
+  const time = (signalContext.time || []).map(value => Number(value));
+  const channels = Object.entries(signalContext.channels || {});
+  if (!time.length) {
+    drawEmptyPlot(plotId, "Aucune fenêtre temporelle disponible pour ce segment");
+    return;
+  }
+  if (!channels.length) {
+    drawEmptyPlot(plotId, "Aucun signal sélectionné");
+    return;
+  }
+  const traces = channels
+    .map(([name, channel], index) => {
+      const y = (channel.values || []).map(value => Number(value));
+      const points = time
+        .map((x, pointIndex) => ({ x, y: y[pointIndex] }))
+        .filter(point => Number.isFinite(point.x) && Number.isFinite(point.y));
+      if (!points.length) return null;
+      return {
+        type: "scattergl",
+        mode: "lines",
+        name,
+        x: points.map(point => point.x),
+        y: points.map(point => point.y),
+        yaxis: index === 1 ? "y2" : "y",
+        line: {
+          color: ["#1368ce", "#15803d", "#e26d0a", "#8b5cf6", "#b42318"][index % 5],
+          width: 1.5,
+        },
+        hovertemplate: `${escapeHtml(name)}<br>t=%{x:.2f}s<br>val=%{y:.4g}<extra></extra>`,
+      };
+    })
+    .filter(Boolean);
+  if (!traces.length) {
+    drawEmptyPlot(plotId, "Canaux sélectionnés absents du JSON resamplé");
+    return;
+  }
+  const start = Number(segment.start_time_sec);
+  const end = Number(segment.end_time_sec);
+  const layout = plotlyLayout("Signaux et indicateurs du segment");
+  layout.xaxis.title = "temps (s)";
+  applyTwoScaleAxes(layout, traces, traces[0]?.name || "valeur", traces[1]?.name || "valeur");
+  layout.shapes = Number.isFinite(start) && Number.isFinite(end) && end > start
+    ? [{
+      type: "rect",
+      xref: "x",
+      yref: "paper",
+      x0: start,
+      x1: end,
+      y0: 0,
+      y1: 1,
+      fillcolor: "rgba(226, 109, 10, 0.10)",
+      line: { width: 0 },
+      layer: "below",
+    }]
+    : [];
+  Promise.resolve(Plotly.react(plotId, traces, layout, plotlyConfig()))
+    .then(() => resizePlotSoon(plotId));
 }
 
 function artifactUrl(path) {
@@ -2031,6 +2138,7 @@ function renderDynamicGenerationSegment(segment, prediction) {
       </div>
     `).join("");
   }
+  drawDynamicSegmentSignalPlot(segment);
   const image = $("dynamicArtifactPreview");
   if (image) {
     const url = artifactUrl(prediction?.input_artifact_path);
@@ -2044,9 +2152,13 @@ function renderDynamicGenerationSegment(segment, prediction) {
   }
 }
 
-function renderDynamicRuns() {
+function dynamicGenerationDate(value) {
+  return value ? String(value).slice(0, 10) : "";
+}
+
+function dynamicGenerationRows() {
   const predictionsByAnnotation = new Map(state.dynamicPredictions.map(item => [item.annotation_id, item]));
-  const rows = state.dynamicContext?.segments?.length
+  return state.dynamicContext?.segments?.length
     ? state.dynamicContext.segments.map(segment => ({
       ...(predictionsByAnnotation.get(segment.annotation_id) || {}),
       annotation_id: segment.annotation_id,
@@ -2055,27 +2167,153 @@ function renderDynamicRuns() {
       input_context: predictionsByAnnotation.get(segment.annotation_id)?.input_context || { segment },
       summary_text: predictionsByAnnotation.get(segment.annotation_id)?.summary_text || "",
       created_at: predictionsByAnnotation.get(segment.annotation_id)?.created_at || "",
+      label: segment.label || "",
+      file_name: segment.file_name || "",
+      recorded_at: segment.recorded_at || "",
     }))
     : state.dynamicRuns;
-  renderTable(
-    "dynamicAnalysisRunsTable",
-    [
-      {
-        key: "name",
-        label: "Annotation",
-        render: row => `<button type="button" class="link-button dynamic-run-open" data-run-id="${escapeHtml(row.prediction_id || "")}" data-annotation-id="${escapeHtml(row.annotation_id)}">${escapeHtml(row.annotation_id)}</button>`,
-      },
-      { key: "created_at", label: "Date" },
-      { key: "status", label: "Statut", render: row => `<span class="pill">${escapeHtml(row.status)}</span>` },
-      { key: "input_context", label: "Fichier", render: row => escapeHtml(row.input_context?.segment?.file_name || "-") },
-      { key: "summary_text", label: "Synthèse", render: row => escapeHtml(row.summary_text || "-") },
-    ],
-    rows,
-    "Aucune annotation"
-  );
-  document.querySelectorAll(".dynamic-run-open").forEach(button => {
-    button.addEventListener("click", () => selectDynamicRun(button.dataset.runId, button.dataset.annotationId));
+}
+
+function renderDynamicGenerationFilterControls() {
+  const rows = dynamicGenerationRows();
+  const previousDateFrom = $("dynamicGenerationDateFromInput")?.value || "";
+  const previousDateTo = $("dynamicGenerationDateToInput")?.value || "";
+  const previousLabel = $("dynamicGenerationLabelSelect")?.value || "";
+  const dates = Array.from(new Set(rows.map(row => dynamicGenerationDate(row.recorded_at || row.input_context?.segment?.recorded_at)).filter(Boolean))).sort();
+  renderExplorationDateOptions($("dynamicGenerationDateFromInput"), dates, "Toutes les dates");
+  renderExplorationDateOptions($("dynamicGenerationDateToInput"), dates, "Toutes les dates");
+  if ($("dynamicGenerationDateFromInput")) {
+    $("dynamicGenerationDateFromInput").value = dates.includes(previousDateFrom) ? previousDateFrom : "";
+  }
+  if ($("dynamicGenerationDateToInput")) {
+    $("dynamicGenerationDateToInput").value = dates.includes(previousDateTo) ? previousDateTo : "";
+  }
+  const labelSelect = $("dynamicGenerationLabelSelect");
+  if (labelSelect) {
+    const labels = Array.from(new Set(rows.map(row => row.label || row.input_context?.segment?.label).filter(Boolean))).sort((a, b) => a.localeCompare(b));
+    labelSelect.innerHTML = [
+      '<option value="">Tous les labels</option>',
+      ...labels.map(label => `<option value="${escapeHtml(label)}">${escapeHtml(label)}</option>`),
+    ].join("");
+    labelSelect.value = labels.includes(previousLabel) ? previousLabel : "";
+  }
+}
+
+function filteredDynamicGenerationRows() {
+  const dateFrom = $("dynamicGenerationDateFromInput")?.value || "";
+  const dateTo = $("dynamicGenerationDateToInput")?.value || "";
+  const label = $("dynamicGenerationLabelSelect")?.value || "";
+  const status = $("dynamicGenerationStatusSelect")?.value || "";
+  const fileFilter = ($("dynamicGenerationFileInput")?.value || "").trim().toLowerCase();
+  return dynamicGenerationRows().filter(row => {
+    const segment = row.input_context?.segment || {};
+    const rowDate = dynamicGenerationDate(row.recorded_at || segment.recorded_at);
+    const rowLabel = row.label || segment.label || "";
+    const fileName = row.file_name || segment.file_name || "";
+    if (dateFrom && (!rowDate || rowDate < dateFrom)) return false;
+    if (dateTo && (!rowDate || rowDate > dateTo)) return false;
+    if (label && rowLabel !== label) return false;
+    if (status === "pending" && row.status !== "à générer") return false;
+    if (status === "generated" && row.status === "à générer") return false;
+    if (fileFilter && !fileName.toLowerCase().includes(fileFilter)) return false;
+    return true;
   });
+}
+
+function renderDynamicGenerationFilterStatus(rows) {
+  const status = $("dynamicGenerationFilterStatus");
+  if (!status) return;
+  const total = dynamicGenerationRows().length;
+  status.textContent = `${rows.length} annotation(s) affichée(s) sur ${total}.`;
+}
+
+function dynamicGenerationOptionLabel(row) {
+  const segment = row.input_context?.segment || {};
+  const date = dynamicGenerationDate(row.recorded_at || segment.recorded_at) || "-";
+  const label = row.label || segment.label || "-";
+  const fileName = row.file_name || segment.file_name || "-";
+  return `${date} · ${label} · ${fileName}`;
+}
+
+function renderDynamicRuns() {
+  renderDynamicGenerationFilterControls();
+  const rows = filteredDynamicGenerationRows();
+  renderDynamicGenerationFilterStatus(rows);
+  const select = $("dynamicGenerationAnnotationSelect");
+  if (!select) return;
+  select.innerHTML = rows.length
+    ? rows.map(row => `
+      <option value="${escapeHtml(row.annotation_id)}" data-run-id="${escapeHtml(row.prediction_id || "")}">
+        ${escapeHtml(dynamicGenerationOptionLabel(row))}
+      </option>
+    `).join("")
+    : '<option value="">Aucune annotation</option>';
+  if (rows.some(row => row.annotation_id === state.dynamicSelectedAnnotationId)) {
+    select.value = state.dynamicSelectedAnnotationId;
+  } else {
+    select.value = rows[0]?.annotation_id || "";
+  }
+}
+
+function applyDynamicGenerationFilters() {
+  renderDynamicRuns();
+  const rows = filteredDynamicGenerationRows();
+  const current = rows.find(row => row.annotation_id === state.dynamicSelectedAnnotationId);
+  if (current) {
+    selectDynamicRun(current.prediction_id || "", current.annotation_id);
+    return;
+  }
+  const first = rows[0];
+  if (first) {
+    selectDynamicRun(first.prediction_id || "", first.annotation_id);
+  } else {
+    state.dynamicSelectedAnnotationId = "";
+    state.dynamicSelectedRunId = "";
+    state.dynamicSelectedPredictionId = "";
+    renderDynamicGenerationSegment(null, null);
+    $("dynamicAnalysisResult").innerHTML = '<div class="muted">Aucune annotation ne correspond aux filtres.</div>';
+    $("dynamicAnalysisCorrectionInput").value = "";
+    $("saveDynamicAnalysisVersionBtn").disabled = true;
+  }
+}
+
+async function refreshDynamicAnalysisAfterAnnotationChange() {
+  const analysisId = currentAnalysisId();
+  if (!analysisId) return;
+  const selectedId = state.dynamicSelectedAnalysisId || $("dynamicAnalysisPromptSelect")?.value || "";
+  const generationOpen = $("dynamic-analysis-generate")?.classList.contains("active");
+  await loadDynamicAnalysis();
+  if (selectedId && state.dynamicAnalyses.some(item => item.dynamic_analysis_id === selectedId)) {
+    state.dynamicSelectedAnalysisId = selectedId;
+    if ($("dynamicAnalysisPromptSelect")) $("dynamicAnalysisPromptSelect").value = selectedId;
+  }
+  if (!generationOpen || !state.dynamicSelectedAnalysisId) {
+    state.dynamicContext = null;
+    state.dynamicSelectedAnnotationId = "";
+    state.dynamicSelectedPredictionId = "";
+    state.dynamicSelectedRunId = "";
+    return;
+  }
+  await buildDynamicContext();
+  applyDynamicGenerationFilters();
+}
+
+function selectDynamicGenerationCurrentOption() {
+  const select = $("dynamicGenerationAnnotationSelect");
+  if (!select?.value) return;
+  const option = select.selectedOptions?.[0];
+  selectDynamicRun(option?.dataset.runId || "", select.value);
+}
+
+function goToRelativeDynamicGenerationAnnotation(delta) {
+  const rows = filteredDynamicGenerationRows();
+  if (!rows.length) return;
+  const currentIndex = rows.findIndex(row => row.annotation_id === state.dynamicSelectedAnnotationId);
+  const nextIndex = currentIndex < 0
+    ? 0
+    : Math.max(0, Math.min(rows.length - 1, currentIndex + delta));
+  const row = rows[nextIndex];
+  selectDynamicRun(row.prediction_id || "", row.annotation_id);
 }
 
 function selectDynamicRun(runId, annotationId = "") {
@@ -2086,16 +2324,6 @@ function selectDynamicRun(runId, annotationId = "") {
   if (!run && !segment) return;
   state.dynamicSelectedRunId = runId || "";
   state.dynamicSelectedPredictionId = run?.prediction_id || "";
-  renderDynamicContext(run.context || {
-    summary: {
-      segment_count: 1,
-      file_count: 1,
-      skipped_segment_count: 0,
-      channels: Object.keys(segment?.signal_context?.channels || {}),
-      labels: [segment?.label].filter(Boolean),
-    },
-    segments: segment ? [segment] : [],
-  });
   renderDynamicGenerationSegment(segment, run);
   $("dynamicAnalysisResult").innerHTML = run
     ? renderMarkdownLite(run.response_markdown)
@@ -2178,6 +2406,7 @@ async function saveAnnotation() {
   await loadAnnotations();
   await loadAnnotationCatalog();
   await refreshAnnotationPlots();
+  await refreshDynamicAnalysisAfterAnnotationChange();
 }
 
 async function deleteAnnotationById(annotationId) {
@@ -2194,6 +2423,7 @@ async function deleteAnnotationById(annotationId) {
   await loadAnnotations();
   await loadAnnotationCatalog();
   await refreshAnnotationPlots();
+  await refreshDynamicAnalysisAfterAnnotationChange();
 }
 
 async function renameAnnotationLabel() {
@@ -2216,6 +2446,7 @@ async function renameAnnotationLabel() {
   await loadAnnotations();
   await loadAnnotationCatalog();
   await refreshAnnotationPlots();
+  await refreshDynamicAnalysisAfterAnnotationChange();
 }
 
 async function deleteSelectedAnnotationLabel() {
@@ -2234,6 +2465,7 @@ async function deleteSelectedAnnotationLabel() {
   await loadAnnotations();
   await loadAnnotationCatalog();
   await refreshAnnotationPlots();
+  await refreshDynamicAnalysisAfterAnnotationChange();
 }
 
 async function createAnnotationLabel() {
@@ -2723,7 +2955,7 @@ async function createAnalysis() {
       await loadAnalyses();
       await loadAnalysis(payload.analysis_id);
       showWorkflowStep("sources");
-      throw new Error(`Analyse créée, rattachement DXD à compléter: ${error.message || String(error)}`);
+      throw new Error(`Campagne créée, rattachement DXD à compléter: ${error.message || String(error)}`);
     }
   }
   if (state.files.length) {
@@ -3025,6 +3257,7 @@ function bindActions() {
     button.classList.add("active");
     document.querySelectorAll(".view").forEach(item => item.classList.remove("active"));
     $(`view-${button.dataset.view}`).classList.add("active");
+    updateKpiVisibility(button.dataset.view);
     if (button.dataset.view === "annotations") {
       wrapAction(async () => {
         showAnnotationStep("catalog");
@@ -3056,7 +3289,7 @@ function bindActions() {
         await loadParametricDateRange();
         await loadParametricFiles();
         await refreshParametric();
-      }, "Vision paramétrique chargée")();
+      }, "Visualisation paramétrique chargée")();
     }
   });
   $("annotationTabs")?.addEventListener("click", event => {
@@ -3100,7 +3333,7 @@ function bindActions() {
     state.parametricFileId = $("parametricFileSelect").value;
     await loadParametricChannels();
     await refreshParametric();
-  }, "Vision paramétrique chargée"));
+  }, "Visualisation paramétrique chargée"));
   ["parametricDateFromInput", "parametricDateToInput"].forEach(id => {
     $(id)?.addEventListener("change", wrapAction(async () => {
       await loadParametricFiles();
@@ -3183,6 +3416,21 @@ function bindActions() {
   $("deleteDynamicAnalysisBtn")?.addEventListener("click", wrapAction(deleteSelectedDynamicAnalysis, "Analyse dynamique supprimée"));
   $("runDynamicAnalysisBtn")?.addEventListener("click", wrapAction(runDynamicAnalysis, "Analyse dynamique lancée"));
   $("saveDynamicAnalysisVersionBtn")?.addEventListener("click", wrapAction(saveDynamicAnalysisVersion, "Correction sauvegardée"));
+  $("dynamicGenerationAnnotationSelect")?.addEventListener("change", selectDynamicGenerationCurrentOption);
+  $("dynamicGenerationPrevBtn")?.addEventListener("click", () => goToRelativeDynamicGenerationAnnotation(-1));
+  $("dynamicGenerationNextBtn")?.addEventListener("click", () => goToRelativeDynamicGenerationAnnotation(1));
+  [
+    "dynamicGenerationDateFromInput",
+    "dynamicGenerationDateToInput",
+    "dynamicGenerationLabelSelect",
+    "dynamicGenerationStatusSelect",
+    "dynamicGenerationFileInput",
+  ].forEach(id => {
+    const node = $(id);
+    ["input", "change"].forEach(eventName => {
+      node?.addEventListener(eventName, applyDynamicGenerationFilters);
+    });
+  });
   $("saveAnnotationBtn")?.addEventListener("click", wrapAction(saveAnnotation, "Annotation sauvegardée"));
   $("resetAnnotationBtn")?.addEventListener("click", () => {
     resetAnnotationForm();
@@ -3206,15 +3454,15 @@ function bindActions() {
       setTimeout(refreshAnnotationFromChannelSelection, 0);
     });
   });
-  ["explorationMaxPointsInput", "explorationMultiAxisInput", "explorationSegmentSourceSelect", "explorationLabelSelect"].forEach(id => {
+  ["explorationMaxPointsInput", "explorationLabelSelect"].forEach(id => {
     $(id)?.addEventListener("change", wrapAction(refreshExploration, "Exploration chargée"));
   });
   $("parametricScopeSelect")?.addEventListener("change", wrapAction(async () => {
     updateParametricScopeUi();
     await refreshParametric();
-  }, "Vision paramétrique chargée"));
+  }, "Visualisation paramétrique chargée"));
   ["parametricMaxPointsInput", "parametricScatterInput"].forEach(id => {
-    $(id)?.addEventListener("change", wrapAction(refreshParametric, "Vision paramétrique chargée"));
+    $(id)?.addEventListener("change", wrapAction(refreshParametric, "Visualisation paramétrique chargée"));
   });
   document.querySelectorAll(".filter-toggle-btn").forEach(button => {
     button.setAttribute("aria-expanded", "true");
@@ -3256,9 +3504,9 @@ function bindActions() {
     }
   });
   window.addEventListener("resize", () => {
-    resizePlots(["explorationSignalPlot", "explorationTrajectoryPlot", "parametricPlot", "annotationSignalPlot", "annotationTrajectoryPlot"]);
+    resizePlots(["explorationSignalPlot", "explorationTrajectoryPlot", "parametricPlot", "annotationSignalPlot", "annotationTrajectoryPlot", "dynamicSegmentSignalPlot"]);
   });
-  $("createAnalysisBtn").addEventListener("click", wrapAction(createAnalysis, "Analyse créée"));
+  $("createAnalysisBtn").addEventListener("click", wrapAction(createAnalysis, "Campagne créée"));
   $("analyzeChannelsBtn").addEventListener("click", wrapAction(analyzeChannels, "Analyse canaux terminée"));
   $("cancelChannelAnalysisBtn").addEventListener("click", wrapAction(cancelChannelAnalysis, "Arrêt demandé"));
   $("selectAllRecurrentBtn").addEventListener("click", selectAllRecurrent);
@@ -3267,7 +3515,7 @@ function bindActions() {
   $("selectAllIndicatorsBtn")?.addEventListener("click", selectAllAvailableDynamicIndicators);
   $("clearIndicatorsBtn")?.addEventListener("click", clearDynamicIndicators);
   $("saveDynamicIndicatorsBtn")?.addEventListener("click", wrapAction(saveDynamicIndicators, "Indicateurs sauvegardés"));
-  $("finalizeAnalysisBtn").addEventListener("click", wrapAction(finalizeAnalysis, "Analyse créée et export JSON terminé"));
+  $("finalizeAnalysisBtn").addEventListener("click", wrapAction(finalizeAnalysis, "Campagne créée et export JSON terminé"));
   $("cancelResamplingBtn").addEventListener("click", wrapAction(cancelResampling, "Arrêt demandé"));
   $("channelSearchInput").addEventListener("input", event => {
     state.recurrentFilter = event.target.value;
@@ -3291,6 +3539,7 @@ function wrapAction(fn, successMessage) {
 
 async function init() {
   bindActions();
+  updateKpiVisibility(document.querySelector("#mainNav button.active")?.dataset.view || "overview");
   try {
     await loadAnalyses();
     if (state.analysis) {

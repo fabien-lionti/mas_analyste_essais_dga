@@ -5,17 +5,17 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Analyse Essais DGA</title>
   <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
-  <link rel="stylesheet" href="/static/styles.css?v=20260724-25">
+  <link rel="stylesheet" href="/static/styles.css?v=20260724-29">
 </head>
 <body>
   <header>
     <div>
-      <div class="brand">a trouver</div>
+      <img class="brand-logo" src="/static/assets/DynaScope_logo.svg" alt="DynaSCope">
     </div>
     <nav class="nav" id="mainNav">
-      <button type="button" class="active" data-view="overview">Créer une analyse</button>
-      <button type="button" data-view="choice">Choix analyse</button>
-      <button type="button" data-view="exploration">Exploration</button>
+      <button type="button" class="active" data-view="overview">Créer une campagne</button>
+      <button type="button" data-view="choice">Choisir une campagne</button>
+      <button type="button" data-view="exploration">Visualisation</button>
       <button type="button" data-view="annotations">Annotations</button>
       <button type="button" data-view="dynamic-analysis">Analyse dynamique</button>
     </nav>
@@ -28,7 +28,7 @@
 
       <section class="view active" id="view-overview">
         <div class="panel stack">
-          <h2>Créer une analyse</h2>
+          <h2>Créer une campagne</h2>
           <div class="subtabs" id="analysisWorkflowTabs">
             <button type="button" class="active" data-workflow-step="sources">1. Fichiers DXD</button>
             <button type="button" data-workflow-step="channels" id="workflowChannelsTab">2. Canaux DXD</button>
@@ -47,7 +47,7 @@
               </div>
             </div>
             <div class="row">
-              <button type="button" id="createAnalysisBtn">Créer une analyse</button>
+              <button type="button" id="createAnalysisBtn">Créer une campagne</button>
               <div class="muted" id="workflowSourceState">Aucun périmètre DXD initialisé</div>
             </div>
             <div class="row">
@@ -154,7 +154,7 @@
               </div>
             </div>
             <div class="row">
-              <button type="button" id="finalizeAnalysisBtn">Créer l'analyse</button>
+              <button type="button" id="finalizeAnalysisBtn">Créer la campagne</button>
               <button type="button" id="cancelResamplingBtn" class="secondary" disabled>Stop</button>
             </div>
             <div id="resamplingProgress" class="progress-block hidden" aria-live="polite">
@@ -177,7 +177,7 @@
       <section class="view" id="view-choice">
         <div class="grid-2 analysis-choice-layout">
           <div class="panel stack">
-            <h2>Choix analyse</h2>
+            <h2>Choisir une campagne</h2>
             <div id="analysisChoiceList"></div>
           </div>
           <div class="panel stack">
@@ -189,16 +189,16 @@
 
       <section class="view" id="view-exploration">
         <div class="panel stack">
-          <h2>Exploration</h2>
+          <h2>Visualisation</h2>
           <div class="subtabs" id="explorationTabs">
-            <button type="button" class="active" data-exploration-step="temporal">1. Vision temporelle</button>
-            <button type="button" data-exploration-step="parametric">2. Vision paramétrique</button>
+            <button type="button" class="active" data-exploration-step="temporal">1. Visualisation temporelle</button>
+            <button type="button" data-exploration-step="parametric">2. Visualisation paramétrique</button>
           </div>
         </div>
         <div class="exploration-step active" id="exploration-temporal">
           <div class="exploration-layout">
             <div class="panel stack">
-              <h2>Vision temporelle par signal</h2>
+              <h2>Visualisation temporelle par signal</h2>
               <div class="grid-2">
                 <div>
                   <label for="explorationDateFromInput">Date début</label>
@@ -231,19 +231,6 @@
                 <label for="explorationMaxPointsInput">Nb max de points signal / trajectoire</label>
                 <input id="explorationMaxPointsInput" type="number" value="8000" min="100" max="50000" step="100">
               </div>
-              <label class="row">
-                <input id="explorationMultiAxisInput" type="checkbox" checked style="width:auto">
-                <span>Une échelle par canal</span>
-              </label>
-              <div>
-                <label for="explorationSegmentSourceSelect">Filtrer par segments</label>
-                <select id="explorationSegmentSourceSelect">
-                  <option value="none" selected>Aucun filtre segment</option>
-                  <option value="annotations">Annotations uniquement</option>
-                  <option value="cnn">Prédictions CNN uniquement</option>
-                  <option value="annotations_cnn">Annotations + prédictions CNN</option>
-                </select>
-              </div>
               <div>
                 <label for="explorationLabelSelect">Label</label>
                 <select id="explorationLabelSelect">
@@ -267,7 +254,7 @@
         <div class="exploration-step" id="exploration-parametric">
           <div class="exploration-layout">
             <div class="panel stack">
-              <h2>Vision paramétrique</h2>
+              <h2>Visualisation paramétrique</h2>
               <div class="grid-2">
                 <div>
                   <label for="parametricDateFromInput">Date début</label>
@@ -516,42 +503,91 @@
           </div>
 
           <div class="dynamic-analysis-step" id="dynamic-analysis-generate">
-            <div class="grid-2">
-              <div class="section-block">
-                <h2>Trajectoires / annotations</h2>
-                <div id="dynamicAnalysisRunsTable"></div>
-              </div>
-              <div class="section-block">
-                <h2>Segment courant</h2>
-                <div id="dynamicGenerationSegmentSummary" class="summary-grid"></div>
-              </div>
-            </div>
-            <div class="section-block">
-              <h2>Artefact visuel</h2>
-              <img id="dynamicArtifactPreview" class="artifact-preview" alt="Artefact visuel du segment">
-            </div>
-            <div class="row">
-              <button type="button" id="runDynamicAnalysisBtn">Lancer prédiction LLM</button>
-            </div>
-            <div class="section-block">
-              <h2>Synthèse et analyse</h2>
-              <div id="dynamicAnalysisResult" class="analysis-markdown"></div>
-            </div>
-            <div class="section-block stack">
-              <h2>Correction humaine</h2>
-              <textarea id="dynamicAnalysisCorrectionInput" rows="7" placeholder="Sélectionne une prédiction puis corrige la réponse ici."></textarea>
-              <div class="grid-2">
-                <div>
-                  <label for="dynamicAnalysisCorrectionNoteInput">Note</label>
-                  <input id="dynamicAnalysisCorrectionNoteInput" value="Correction humaine">
+            <div class="dynamic-generation-layout">
+              <aside class="panel stack dynamic-generation-sidebar filter-panel">
+                <div class="filter-toggle-row">
+                  <h2>Trajectoires / annotations</h2>
+                  <button type="button" class="secondary filter-toggle-btn" data-toggle-layout="dynamic-analysis-generate" title="Masquer les filtres">‹</button>
                 </div>
-                <label class="row">
-                  <input id="dynamicAnalysisValidatedInput" type="checkbox" style="width:auto">
-                  <span>Valider dataset</span>
-                </label>
-              </div>
-              <div class="row">
-                <button type="button" id="saveDynamicAnalysisVersionBtn" class="secondary" disabled>Sauvegarder correction</button>
+                <div class="grid-2">
+                  <div>
+                    <label for="dynamicGenerationDateFromInput">Date début</label>
+                    <select id="dynamicGenerationDateFromInput">
+                      <option value="">Toutes les dates</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label for="dynamicGenerationDateToInput">Date fin</label>
+                    <select id="dynamicGenerationDateToInput">
+                      <option value="">Toutes les dates</option>
+                    </select>
+                  </div>
+                </div>
+                <div>
+                  <label for="dynamicGenerationLabelSelect">Label</label>
+                  <select id="dynamicGenerationLabelSelect">
+                    <option value="">Tous les labels</option>
+                  </select>
+                </div>
+                <div>
+                  <label for="dynamicGenerationStatusSelect">Statut</label>
+                  <select id="dynamicGenerationStatusSelect">
+                    <option value="">Tous les statuts</option>
+                    <option value="pending">À générer</option>
+                    <option value="generated">Généré</option>
+                  </select>
+                </div>
+                <div>
+                  <label for="dynamicGenerationFileInput">Fichier</label>
+                  <input id="dynamicGenerationFileInput" placeholder="Filtrer par nom de fichier">
+                </div>
+                <div id="dynamicGenerationFilterStatus" class="status-text">Aucun contexte chargé.</div>
+                <div>
+                  <label for="dynamicGenerationAnnotationSelect">Annotation</label>
+                  <select id="dynamicGenerationAnnotationSelect" size="12"></select>
+                </div>
+                <div class="row">
+                  <button type="button" id="dynamicGenerationPrevBtn" class="secondary">Précédent</button>
+                  <button type="button" id="dynamicGenerationNextBtn" class="secondary">Suivant</button>
+                </div>
+              </aside>
+              <div class="dynamic-generation-main">
+                <div class="section-block">
+                  <h2>Segment courant</h2>
+                  <div id="dynamicGenerationSegmentSummary" class="summary-grid"></div>
+                </div>
+                <div class="section-block">
+                  <h2>Signaux et indicateurs sélectionnés</h2>
+                  <div id="dynamicSegmentSignalPlot" class="plot-panel"></div>
+                </div>
+                <div class="section-block">
+                  <h2>Artefact visuel</h2>
+                  <img id="dynamicArtifactPreview" class="artifact-preview" alt="Artefact visuel du segment">
+                </div>
+                <div class="row">
+                  <button type="button" id="runDynamicAnalysisBtn">Lancer prédiction LLM</button>
+                </div>
+                <div class="section-block">
+                  <h2>Synthèse et analyse</h2>
+                  <div id="dynamicAnalysisResult" class="analysis-markdown"></div>
+                </div>
+                <div class="section-block stack">
+                  <h2>Correction humaine</h2>
+                  <textarea id="dynamicAnalysisCorrectionInput" rows="7" placeholder="Sélectionne une prédiction puis corrige la réponse ici."></textarea>
+                  <div class="grid-2">
+                    <div>
+                      <label for="dynamicAnalysisCorrectionNoteInput">Note</label>
+                      <input id="dynamicAnalysisCorrectionNoteInput" value="Correction humaine">
+                    </div>
+                    <label class="row">
+                      <input id="dynamicAnalysisValidatedInput" type="checkbox" style="width:auto">
+                      <span>Valider dataset</span>
+                    </label>
+                  </div>
+                  <div class="row">
+                    <button type="button" id="saveDynamicAnalysisVersionBtn" class="secondary" disabled>Sauvegarder correction</button>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -560,6 +596,6 @@
     </main>
   </div>
 
-  <script src="/static/app.js?v=20260724-24"></script>
+  <script src="/static/app.js?v=20260724-41"></script>
 </body>
 </html>
