@@ -28,6 +28,7 @@ env/
 *.pickle
 *.joblib
 *.log
+*.sqlite
 *.png
 *.jpg
 *.jpeg
@@ -56,3 +57,4 @@ cnn_window_predictions.csv
 dataset_index.json
 window_univariate_features.csv
 window_univariate_summary.json
+codex_sess

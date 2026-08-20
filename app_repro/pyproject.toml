@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mas-analyste-essais-dga"
+version = "0.1.0"
+description = "Analyse et exploration des essais vehicule DGA."
+requires-python = ">=3.10"
+dependencies = [
+  "fastapi",
+  "uvicorn[standard]",
+  "numpy",
+  "pandas",
+  "tqdm",
+  "python-dotenv",
+  "scipy",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
