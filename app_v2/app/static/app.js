@@ -536,7 +536,7 @@ function toggleFilterLayout(button) {
 function plotlyLayout(title, ytitle = "") {
   return {
     autosize: true,
-    title: { text: title, font: { color: "#17202c", size: 13 } },
+    title: { text: title, font: { color: "#17202c", size: 16 } },
     paper_bgcolor: "#ffffff",
     plot_bgcolor: "#fbfcfe",
     font: { color: "#17202c" },
@@ -824,7 +824,7 @@ function drawEmptyPlot(plotId, message) {
       xref: "paper",
       yref: "paper",
       showarrow: false,
-      font: { color: "#657386", size: 13 },
+      font: { color: "#657386", size: 16 },
     }],
   }, plotlyConfig())).then(() => resizePlotSoon(plotId));
 }
@@ -984,7 +984,7 @@ function drawAnnotationSignalPlot(payload) {
     yref: "paper",
     yanchor: "bottom",
     showarrow: false,
-    font: { color: "#17202c", size: 11 },
+    font: { color: "#17202c", size: 13 },
     bgcolor: "rgba(255, 255, 255, 0.82)",
     bordercolor: "#d7dee8",
     borderpad: 3,
